@@ -1,0 +1,105 @@
+{
+  "name": "limn",
+  "version": "0.0.1",
+  "description": "TypeScript-first library for building, debugging, and operating LLM applications. Limn your AI.",
+  "license": "MIT",
+  "author": "Can Arslan <can.arslan@nodelabs.software>",
+  "homepage": "https://github.com/CanArslanDev/limn",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/CanArslanDev/limn.git"
+  },
+  "bugs": {
+    "url": "https://github.com/CanArslanDev/limn/issues"
+  },
+  "keywords": [
+    "ai",
+    "llm",
+    "anthropic",
+    "openai",
+    "agent",
+    "observability",
+    "tracing",
+    "claude",
+    "gpt",
+    "tool-use"
+  ],
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./agent": {
+      "types": "./dist/agent/index.d.ts",
+      "import": "./dist/agent/index.js",
+      "require": "./dist/agent/index.cjs"
+    },
+    "./inspect": {
+      "types": "./dist/inspect/index.d.ts",
+      "import": "./dist/inspect/index.js",
+      "require": "./dist/inspect/index.cjs"
+    },
+    "./errors": {
+      "types": "./dist/errors/index.d.ts",
+      "import": "./dist/errors/index.js",
+      "require": "./dist/errors/index.cjs"
+    }
+  },
+  "bin": {
+    "limn": "./dist/cli/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.10.0"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "format": "biome format --write .",
+    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test",
+    "prepublishOnly": "pnpm run verify && pnpm run build",
+    "release": "pnpm run verify && pnpm run build && npm publish --access public"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "peerDependencies": {
+    "@anthropic-ai/sdk": ">=0.30.0",
+    "openai": ">=4.60.0"
+  },
+  "peerDependenciesMeta": {
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "openai": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.30.1",
+    "@biomejs/biome": "^1.9.4",
+    "@types/node": "^22.7.5",
+    "@vitest/coverage-v8": "^2.1.2",
+    "openai": "^4.67.3",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.2",
+    "vitest": "^2.1.2"
+  }
+}

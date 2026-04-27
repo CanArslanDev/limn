@@ -1,0 +1,89 @@
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Diagnostic reports
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Runtime data
+pids/
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage and test artifacts
+coverage/
+*.lcov
+.nyc_output/
+.vitest-cache/
+
+# Build outputs
+dist/
+build/
+out/
+lib-cjs/
+lib-esm/
+.tsbuildinfo
+*.tsbuildinfo
+
+# Dependency directories
+node_modules/
+jspm_packages/
+.pnp/
+.pnp.js
+.pnp.cjs
+
+# Lockfiles for sibling packages (root lockfile is committed for the main package)
+# Uncomment if you go monorepo and want only the root lockfile:
+# packages/*/package-lock.json
+# packages/*/yarn.lock
+
+# Caches
+.cache/
+.parcel-cache/
+.next/
+.nuxt/
+.turbo/
+.eslintcache
+.stylelintcache
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.test
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# Limn local trace storage (Phase 1 default trace sink)
+.limn/
+.limn-traces/
+
+# Project-internal files - kept local, never committed
+# Mirrors rune's discipline: AI-authored notes, plans, and operating manuals
+# stay on disk. The only markdown the repo publishes lives at the root and in
+# docs surfaces explicitly listed in CLAUDE.md section 2.
+/docs/
+/idea.md
+/CLAUDE.md
+/.claude/
+/.serena/
+
+# Generated API reference
+/api-docs/
+/typedoc/
