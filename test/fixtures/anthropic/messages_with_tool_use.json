@@ -1,0 +1,28 @@
+{
+  "id": "msg_test_004",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "alpha "
+    },
+    {
+      "type": "tool_use",
+      "id": "tu_1",
+      "name": "search",
+      "input": {}
+    },
+    {
+      "type": "text",
+      "text": "beta"
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "tool_use",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 6,
+    "output_tokens": 9
+  }
+}

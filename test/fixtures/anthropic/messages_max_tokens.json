@@ -1,0 +1,18 @@
+{
+  "id": "msg_test_002",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "truncated"
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "max_tokens",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 4,
+    "output_tokens": 8
+  }
+}

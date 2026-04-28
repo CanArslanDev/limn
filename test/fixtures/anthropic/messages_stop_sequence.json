@@ -1,0 +1,18 @@
+{
+  "id": "msg_test_005",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "stopped"
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "stop_sequence",
+  "stop_sequence": "STOP",
+  "usage": {
+    "input_tokens": 2,
+    "output_tokens": 1
+  }
+}

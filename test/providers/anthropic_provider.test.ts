@@ -1,76 +1,25 @@
 /**
- * Unit tests for the Anthropic provider adapter. The `@anthropic-ai/sdk`
- * module is mocked at module load so no network calls happen and so we can
- * drive every branch of the error-mapping logic deterministically.
+ * Unit tests for the Anthropic provider adapter. The real `@anthropic-ai/sdk`
+ * runs unmodified; we inject a fake `fetch` via the SDK's documented
+ * `fetch` constructor option (see `node_modules/@anthropic-ai/sdk/index.d.ts`
+ * line 43: "Specify a custom `fetch` function implementation."). That fake
+ * fetch replays JSON fixtures from `test/fixtures/anthropic/` as HTTP
+ * responses, so the SDK constructs its real error classes from real status
+ * codes and the adapter's `instanceof` chain runs against the real classes
+ * a deployed app would see.
  *
- * The mock mirrors the SDK's runtime shape: a default export that, when
- * `new`'d, exposes `messages.create()`, AND static error-class properties on
- * the default export (`Anthropic.AuthenticationError`, etc.). This shape is
- * confirmed by reading `node_modules/@anthropic-ai/sdk/index.d.ts`.
+ * Why this approach instead of `vi.mock("@anthropic-ai/sdk")`: CLAUDE.md
+ * §11 forbids patching SDK methods. The fetch-injection seam is the SDK's
+ * own test hook, and exercising it keeps unit tests honest about the SDK's
+ * actual behavior (status -> class mapping, header capitalization, retry
+ * disable semantics) instead of hand-rolling a fake-class hierarchy that
+ * inevitably drifts from the real one.
  */
 
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-const mockCreate = vi.fn();
-
-// Mock error-class shape mirroring `node_modules/@anthropic-ai/sdk/error.d.ts`:
-// every Anthropic error is an `AnthropicError` -> `APIError` chain. We keep the
-// same class hierarchy so `instanceof` checks against the mocked classes match
-// the real-world chain a deployed app would see.
-class MockAnthropicError extends Error {}
-class MockAPIError extends MockAnthropicError {
-  public readonly status: number | undefined;
-  public readonly headers: Record<string, string> | undefined;
-  public constructor(
-    status: number | undefined,
-    message: string,
-    headers?: Record<string, string>,
-  ) {
-    super(message);
-    this.status = status;
-    this.headers = headers;
-  }
-}
-class MockAuthenticationError extends MockAPIError {}
-class MockPermissionDeniedError extends MockAPIError {}
-class MockRateLimitError extends MockAPIError {}
-class MockInternalServerError extends MockAPIError {}
-class MockAPIConnectionError extends MockAPIError {}
-class MockAPIConnectionTimeoutError extends MockAPIConnectionError {}
-class MockAPIUserAbortError extends MockAPIError {}
-
-// Hoisted via vi.mock so the dynamic-import inside AnthropicProvider receives
-// the mocked module instead of the real SDK. The real SDK exposes its error
-// classes both as static properties on the default export AND as named
-// exports off the module namespace; we mirror both so the adapter (which
-// reads them as named exports) sees the mocked classes.
-vi.mock("@anthropic-ai/sdk", () => {
-  const Anthropic = vi.fn().mockImplementation(() => ({
-    messages: { create: mockCreate },
-  }));
-  Object.assign(Anthropic, {
-    APIError: MockAPIError,
-    AuthenticationError: MockAuthenticationError,
-    PermissionDeniedError: MockPermissionDeniedError,
-    RateLimitError: MockRateLimitError,
-    InternalServerError: MockInternalServerError,
-    APIConnectionError: MockAPIConnectionError,
-    APIConnectionTimeoutError: MockAPIConnectionTimeoutError,
-    APIUserAbortError: MockAPIUserAbortError,
-  });
-  return {
-    default: Anthropic,
-    APIError: MockAPIError,
-    AuthenticationError: MockAuthenticationError,
-    PermissionDeniedError: MockPermissionDeniedError,
-    RateLimitError: MockRateLimitError,
-    InternalServerError: MockInternalServerError,
-    APIConnectionError: MockAPIConnectionError,
-    APIConnectionTimeoutError: MockAPIConnectionTimeoutError,
-    APIUserAbortError: MockAPIUserAbortError,
-  };
-});
-
+import { readFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { afterEach, describe, expect, it } from "vitest";
 import {
   AuthError,
   ModelTimeoutError,
@@ -80,230 +29,294 @@ import {
 import { AnthropicProvider } from "../../src/providers/anthropic/anthropic_provider.js";
 import type { ProviderRequest } from "../../src/providers/provider.js";
 
+const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), "../fixtures/anthropic");
+
+async function loadFixture(name: string): Promise<unknown> {
+  const raw = await readFile(join(FIXTURE_DIR, name), "utf8");
+  return JSON.parse(raw) as unknown;
+}
+
+interface FakeFetchOptions {
+  /** HTTP status to return. Defaults to 200. */
+  readonly status?: number;
+  /** Fixture file name under test/fixtures/anthropic/. */
+  readonly fixture: string;
+  /** Extra response headers (lowercase keys recommended). */
+  readonly headers?: Readonly<Record<string, string>>;
+  /**
+   * If set, the fake fetch waits this many ms before resolving. Used to
+   * test the AbortController-driven timeout path: when the SDK's signal
+   * fires before the delay elapses, fetch rejects with an AbortError.
+   */
+  readonly delayMs?: number;
+}
+
+interface RecordedCall {
+  readonly url: string;
+  readonly body: unknown;
+  readonly headers: Readonly<Record<string, string>>;
+}
+
+/**
+ * Build a fake `fetch` that replays a fixture. Returns the function plus a
+ * `calls` array the test can inspect after the SDK call returns. The function
+ * is typed as `typeof globalThis.fetch` so the SDK's `Core.Fetch` parameter
+ * (structurally `(url: RequestInfo, init?: RequestInit) => Promise<Response>`)
+ * accepts it.
+ */
+function makeFakeFetch(opts: FakeFetchOptions): {
+  readonly fetch: typeof globalThis.fetch;
+  readonly calls: ReadonlyArray<RecordedCall>;
+} {
+  const calls: RecordedCall[] = [];
+  const fn: typeof globalThis.fetch = async (input, init) => {
+    const url = typeof input === "string" ? input : input.toString();
+    let parsedBody: unknown;
+    if (init?.body !== undefined && init.body !== null) {
+      try {
+        parsedBody = JSON.parse(init.body as string);
+      } catch {
+        parsedBody = init.body;
+      }
+    }
+    const headerRecord: Record<string, string> = {};
+    const rawHeaders = init?.headers;
+    if (rawHeaders !== undefined) {
+      if (rawHeaders instanceof Headers) {
+        rawHeaders.forEach((v, k) => {
+          headerRecord[k.toLowerCase()] = v;
+        });
+      } else if (Array.isArray(rawHeaders)) {
+        for (const pair of rawHeaders as unknown as ReadonlyArray<readonly [string, string]>) {
+          const [k, v] = pair;
+          headerRecord[k.toLowerCase()] = v;
+        }
+      } else {
+        for (const [k, v] of Object.entries(rawHeaders as Record<string, string>)) {
+          headerRecord[k.toLowerCase()] = v;
+        }
+      }
+    }
+    calls.push({ url, body: parsedBody, headers: headerRecord });
+
+    if (opts.delayMs !== undefined) {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, opts.delayMs);
+        init?.signal?.addEventListener("abort", () => {
+          clearTimeout(timer);
+          // The standard `fetch` rejects with an AbortError when the signal
+          // fires; the SDK then surfaces it as APIConnectionTimeoutError if
+          // the cause was its internal timeout (see core.js makeRequest).
+          const err = new Error("aborted");
+          err.name = "AbortError";
+          reject(err);
+        });
+      });
+    }
+
+    const body = JSON.stringify(await loadFixture(opts.fixture));
+    return new Response(body, {
+      status: opts.status ?? 200,
+      headers: { "content-type": "application/json", ...(opts.headers ?? {}) },
+    });
+  };
+  return { fetch: fn, calls };
+}
+
 const baseRequest: ProviderRequest = {
   model: "claude-sonnet-4-6",
   messages: [{ role: "user", content: "hi" }],
 };
 
-beforeEach(() => {
-  mockCreate.mockReset();
-});
-
 afterEach(() => {
-  vi.useRealTimers();
+  // No-op today; reserved for future fake-timer suites.
 });
 
 describe("AnthropicProvider construction", () => {
   it("throws AuthError on request when no apiKey is configured", async () => {
-    const provider = new AnthropicProvider(undefined);
+    // Construct without options; readApiKeyFromEnv() returns undefined when
+    // the env var is missing. We assume the test runner does not set
+    // ANTHROPIC_API_KEY (CI never does). If a developer runs locally with
+    // the var set, the request still throws AuthError because the fake
+    // fetch never gets a chance: the constructor variant we use here
+    // explicitly passes `apiKey: undefined`.
+    const provider = new AnthropicProvider({ apiKey: undefined });
     await expect(provider.request(baseRequest)).rejects.toBeInstanceOf(AuthError);
   });
 
-  it("does not touch the SDK when the apiKey is missing (no construct)", async () => {
-    const provider = new AnthropicProvider(undefined);
+  it("does not invoke fetch when the apiKey is missing", async () => {
+    const { fetch, calls } = makeFakeFetch({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: undefined, fetch });
     await provider.request(baseRequest).catch(() => undefined);
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
   });
 });
 
 describe("AnthropicProvider happy path", () => {
-  it("returns concatenated text + mapped usage + mapped stopReason", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "hello" }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 5, output_tokens: 7 },
-    });
-    const provider = new AnthropicProvider("test-key");
+  it("returns concatenated text + mapped usage + mapped stopReason on success", async () => {
+    const { fetch } = makeFakeFetch({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     const response = await provider.request(baseRequest);
     expect(response).toEqual({
-      content: "hello",
+      content: "Hello from fixture.",
       toolCalls: [],
       stopReason: "end",
-      usage: { inputTokens: 5, outputTokens: 7 },
+      usage: { inputTokens: 10, outputTokens: 5 },
     });
   });
 
   it("concatenates multiple text blocks in order", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [
-        { type: "text", text: "Hello, " },
-        { type: "text", text: "world!" },
-      ],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1, output_tokens: 2 },
-    });
-    const provider = new AnthropicProvider("test-key");
+    const { fetch } = makeFakeFetch({ fixture: "messages_multi_text.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     const response = await provider.request(baseRequest);
     expect(response.content).toBe("Hello, world!");
   });
 
   it("ignores non-text content blocks when concatenating", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [
-        { type: "text", text: "alpha " },
-        { type: "tool_use", id: "tu_1", name: "search", input: {} },
-        { type: "text", text: "beta" },
-      ],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1, output_tokens: 2 },
-    });
-    const provider = new AnthropicProvider("test-key");
+    const { fetch } = makeFakeFetch({ fixture: "messages_with_tool_use.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     const response = await provider.request(baseRequest);
     expect(response.content).toBe("alpha beta");
   });
 
-  it("passes system through the top-level field, not via messages", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "ok" }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1, output_tokens: 1 },
-    });
-    const provider = new AnthropicProvider("test-key");
+  it("forwards system through the top-level field, not via messages", async () => {
+    const { fetch, calls } = makeFakeFetch({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await provider.request({ ...baseRequest, system: "be brief" });
-    expect(mockCreate).toHaveBeenCalledTimes(1);
-    const [args] = mockCreate.mock.calls[0] ?? [];
-    expect(args).toMatchObject({
-      system: "be brief",
-      messages: [{ role: "user", content: "hi" }],
-    });
+    expect(calls).toHaveLength(1);
+    const recorded = calls[0];
+    expect(recorded).toBeDefined();
+    if (recorded === undefined) throw new Error("expected one call");
+    const body = recorded.body as { system?: string; messages: unknown };
+    expect(body.system).toBe("be brief");
+    expect(body.messages).toEqual([{ role: "user", content: "hi" }]);
+  });
+
+  it("forwards temperature when supplied", async () => {
+    const { fetch, calls } = makeFakeFetch({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    await provider.request({ ...baseRequest, temperature: 0.25 });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    expect((recorded.body as { temperature?: number }).temperature).toBe(0.25);
   });
 
   it("rejects role:'system' inside messages with a ProviderError", async () => {
-    const provider = new AnthropicProvider("test-key");
+    const { fetch, calls } = makeFakeFetch({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await expect(
       provider.request({
         model: "claude-sonnet-4-6",
         messages: [{ role: "system", content: "stay calm" }],
       }),
     ).rejects.toBeInstanceOf(ProviderError);
-    expect(mockCreate).not.toHaveBeenCalled();
+    expect(calls).toHaveLength(0);
   });
 
-  it("defaults max_tokens when caller omits it", async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "ok" }],
-      stop_reason: "end_turn",
-      usage: { input_tokens: 1, output_tokens: 1 },
-    });
-    const provider = new AnthropicProvider("test-key");
+  it("defaults max_tokens to 4096 when caller omits it", async () => {
+    const { fetch, calls } = makeFakeFetch({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await provider.request(baseRequest);
-    const [args] = mockCreate.mock.calls[0] ?? [];
-    expect(args).toMatchObject({ max_tokens: 4096 });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    expect((recorded.body as { max_tokens: number }).max_tokens).toBe(4096);
+  });
+
+  it("forwards an explicit max_tokens override", async () => {
+    const { fetch, calls } = makeFakeFetch({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    await provider.request({ ...baseRequest, maxTokens: 256 });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    expect((recorded.body as { max_tokens: number }).max_tokens).toBe(256);
   });
 });
 
 describe("AnthropicProvider stop_reason mapping", () => {
   it.each([
-    ["end_turn", "end"],
-    ["tool_use", "tool_use"],
-    ["max_tokens", "max_tokens"],
-    ["stop_sequence", "end"],
-    [null, "end"],
-  ] as const)("maps SDK %s to ProviderResponse %s", async (sdkStop, mapped) => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ type: "text", text: "" }],
-      stop_reason: sdkStop,
-      usage: { input_tokens: 0, output_tokens: 0 },
-    });
-    const provider = new AnthropicProvider("test-key");
+    ["messages_success.json", "end"],
+    ["messages_max_tokens.json", "max_tokens"],
+    ["messages_with_tool_use.json", "tool_use"],
+    ["messages_stop_sequence.json", "end"],
+    ["messages_null_stop_reason.json", "end"],
+  ] as const)("maps fixture %s to ProviderResponse stopReason %s", async (fixture, mapped) => {
+    const { fetch } = makeFakeFetch({ fixture });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     const response = await provider.request(baseRequest);
     expect(response.stopReason).toBe(mapped);
   });
 });
 
 describe("AnthropicProvider error mapping", () => {
-  it("maps 401 AuthenticationError to AuthError", async () => {
-    mockCreate.mockRejectedValueOnce(new MockAuthenticationError(401, "bad key"));
-    const provider = new AnthropicProvider("test-key");
+  it("maps HTTP 401 to AuthError", async () => {
+    const { fetch } = makeFakeFetch({ fixture: "error_401.json", status: 401 });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await expect(provider.request(baseRequest)).rejects.toBeInstanceOf(AuthError);
   });
 
-  it("maps 403 PermissionDeniedError to AuthError", async () => {
-    mockCreate.mockRejectedValueOnce(new MockPermissionDeniedError(403, "forbidden"));
-    const provider = new AnthropicProvider("test-key");
+  it("maps HTTP 403 to AuthError", async () => {
+    const { fetch } = makeFakeFetch({ fixture: "error_403.json", status: 403 });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await expect(provider.request(baseRequest)).rejects.toBeInstanceOf(AuthError);
   });
 
-  it("maps 429 RateLimitError with retry-after header to RateLimitError(retryAfterMs)", async () => {
-    mockCreate.mockRejectedValueOnce(
-      new MockRateLimitError(429, "slow down", { "retry-after": "5" }),
-    );
-    const provider = new AnthropicProvider("test-key");
-    await expect(provider.request(baseRequest)).rejects.toMatchObject({
-      retryAfterMs: 5000,
+  it("maps HTTP 429 with Retry-After header to RateLimitError(retryAfterMs)", async () => {
+    const { fetch } = makeFakeFetch({
+      fixture: "error_429.json",
+      status: 429,
+      headers: { "retry-after": "5" },
     });
-    // Re-throw + re-catch to also check instanceof.
-    mockCreate.mockRejectedValueOnce(
-      new MockRateLimitError(429, "slow down", { "retry-after": "5" }),
-    );
-    await expect(provider.request(baseRequest)).rejects.toBeInstanceOf(RateLimitError);
-  });
-
-  it("maps 429 without retry-after header to RateLimitError(retryAfterMs=undefined)", async () => {
-    mockCreate.mockRejectedValueOnce(new MockRateLimitError(429, "slow down"));
-    const provider = new AnthropicProvider("test-key");
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     try {
       await provider.request(baseRequest);
-      throw new Error("expected throw");
+      throw new Error("expected RateLimitError");
+    } catch (err) {
+      expect(err).toBeInstanceOf(RateLimitError);
+      expect((err as RateLimitError).retryAfterMs).toBe(5000);
+    }
+  });
+
+  it("maps HTTP 429 without Retry-After header to RateLimitError(retryAfterMs=undefined)", async () => {
+    const { fetch } = makeFakeFetch({ fixture: "error_429.json", status: 429 });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    try {
+      await provider.request(baseRequest);
+      throw new Error("expected RateLimitError");
     } catch (err) {
       expect(err).toBeInstanceOf(RateLimitError);
       expect((err as RateLimitError).retryAfterMs).toBeUndefined();
     }
   });
 
-  it("maps InternalServerError to ProviderError(provider='anthropic')", async () => {
-    mockCreate.mockRejectedValueOnce(new MockInternalServerError(503, "upstream down"));
-    const provider = new AnthropicProvider("test-key");
+  it("maps HTTP 500 to ProviderError(provider='anthropic')", async () => {
+    const { fetch } = makeFakeFetch({ fixture: "error_500.json", status: 500 });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     try {
       await provider.request(baseRequest);
-      throw new Error("expected throw");
+      throw new Error("expected ProviderError");
     } catch (err) {
       expect(err).toBeInstanceOf(ProviderError);
       expect((err as ProviderError).provider).toBe("anthropic");
     }
   });
 
-  it("maps APIConnectionError (transport) to ProviderError", async () => {
-    mockCreate.mockRejectedValueOnce(new MockAPIConnectionError(undefined, "ECONNRESET"));
-    const provider = new AnthropicProvider("test-key");
-    await expect(provider.request(baseRequest)).rejects.toBeInstanceOf(ProviderError);
-  });
-
-  it("maps APIConnectionTimeoutError to ModelTimeoutError", async () => {
-    mockCreate.mockRejectedValueOnce(new MockAPIConnectionTimeoutError(undefined, "timeout"));
-    const provider = new AnthropicProvider("test-key");
-    await expect(provider.request({ ...baseRequest, timeoutMs: 12345 })).rejects.toBeInstanceOf(
-      ModelTimeoutError,
-    );
-  });
-
-  it("maps a generic APIError to ProviderError", async () => {
-    mockCreate.mockRejectedValueOnce(new MockAPIError(418, "teapot"));
-    const provider = new AnthropicProvider("test-key");
-    await expect(provider.request(baseRequest)).rejects.toBeInstanceOf(ProviderError);
-  });
-
-  it("wraps an unknown throw in ProviderError", async () => {
-    mockCreate.mockRejectedValueOnce(new Error("something else"));
-    const provider = new AnthropicProvider("test-key");
+  it("maps an unhandled status (HTTP 418) to ProviderError via the bare APIError fallthrough", async () => {
+    const { fetch } = makeFakeFetch({ fixture: "error_418.json", status: 418 });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await expect(provider.request(baseRequest)).rejects.toBeInstanceOf(ProviderError);
   });
 });
 
 describe("AnthropicProvider abort + timeout", () => {
   it("throws ModelTimeoutError when the SDK call exceeds timeoutMs", async () => {
-    // The SDK call never resolves; the AbortController fires and the SDK
-    // would throw an APIUserAbortError in real life. We simulate by waiting
-    // on the signal, then rejecting with the SDK's abort-error subclass.
-    mockCreate.mockImplementationOnce(
-      (_args: unknown, opts?: { signal?: AbortSignal }) =>
-        new Promise((_resolve, reject) => {
-          opts?.signal?.addEventListener("abort", () => {
-            reject(new MockAPIUserAbortError(undefined, "Request was aborted."));
-          });
-        }),
-    );
-    const provider = new AnthropicProvider("test-key");
+    // Fake fetch hangs (delayMs > timeoutMs). The adapter's AbortController
+    // fires; the SDK observes the AbortError from fetch and surfaces
+    // APIConnectionTimeoutError, which the adapter maps to ModelTimeoutError.
+    const { fetch } = makeFakeFetch({
+      fixture: "messages_success.json",
+      delayMs: 5_000,
+    });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await expect(provider.request({ ...baseRequest, timeoutMs: 30 })).rejects.toBeInstanceOf(
       ModelTimeoutError,
     );
@@ -312,7 +325,7 @@ describe("AnthropicProvider abort + timeout", () => {
 
 describe("AnthropicProvider stream", () => {
   it("throws ProviderError noting batch 1.7", () => {
-    const provider = new AnthropicProvider("test-key");
+    const provider = new AnthropicProvider({ apiKey: "test-key" });
     expect(() => provider.stream(baseRequest)).toThrow(/batch 1\.7/);
   });
 });

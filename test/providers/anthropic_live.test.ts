@@ -4,10 +4,9 @@
  * the suite without touching the network. Local dev with a key in env runs
  * one cheap haiku-class call to confirm the adapter actually wires through.
  *
- * Why this lives in a separate file from `anthropic_provider.test.ts`: the
- * mocked unit tests `vi.mock("@anthropic-ai/sdk")` at module scope, which
- * would also clobber the real SDK for any live test in the same file. Two
- * files, two import contexts, no cross-contamination.
+ * Lives in its own file (separate from `anthropic_provider.test.ts`) to keep
+ * unit-level fixture replays and real-network calls visually distinct: the
+ * fixture tests run on every commit; this one is opt-in via env var.
  */
 
 import { describe, expect, it } from "vitest";

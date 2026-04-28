@@ -1,0 +1,22 @@
+{
+  "id": "msg_test_003",
+  "type": "message",
+  "role": "assistant",
+  "content": [
+    {
+      "type": "text",
+      "text": "Hello, "
+    },
+    {
+      "type": "text",
+      "text": "world!"
+    }
+  ],
+  "model": "claude-sonnet-4-6",
+  "stop_reason": "end_turn",
+  "stop_sequence": null,
+  "usage": {
+    "input_tokens": 1,
+    "output_tokens": 2
+  }
+}

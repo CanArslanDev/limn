@@ -83,3 +83,14 @@ Every typed failure derives from `LimnError`. See [Troubleshooting](troubleshoot
 - `limn/agent` - re-exports `agent` and `tool` plus their types. Use this if you only need the agent surface.
 - `limn/inspect` - exports `TraceRecord`, `TraceSink`, and the inspector startup helper.
 - `limn/errors` - re-exports the entire error hierarchy. Use this if you only need to catch errors and don't want the full bundle.
+
+## Provider construction (advanced)
+
+Most users never touch the provider classes directly: `ai.ask` resolves a model name to a provider via the registry, and the registry lazy-bootstraps the right adapter from the relevant `<VENDOR>_API_KEY` env var. Power users who need to register a provider explicitly (custom keys, alternate baseURLs, test seams) can construct the adapter themselves.
+
+`AnthropicProviderOptions` carries two fields today:
+
+- `apiKey?: string | undefined` - explicit API key. Omit the field entirely to fall back to `process.env.ANTHROPIC_API_KEY`. Pass the field with `undefined` explicitly to bypass the env-var read (useful when test code wants to assert the missing-key path on a developer machine that has the var set).
+- `fetch?: typeof globalThis.fetch | undefined` - custom `fetch` implementation forwarded to the SDK. Test code injects a fake `fetch` that replays recorded JSON fixtures; production code omits this and the SDK uses the global `fetch`.
+
+The adapter sets the SDK's `maxRetries` to `0` so retry policy stays under Limn's control (the client-layer retry loop lands in a later batch). Direct adapter callers who want SDK-level retries should construct their own SDK client instead.

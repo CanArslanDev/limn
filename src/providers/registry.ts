@@ -72,7 +72,7 @@ function bootstrap(name: ProviderName): Provider | null {
       // biome-ignore lint/complexity/useLiteralKeys: process.env requires bracket notation under TS noPropertyAccessFromIndexSignature
       const key = process.env["ANTHROPIC_API_KEY"];
       if (key === undefined || key === "") return null;
-      return new AnthropicProvider(key);
+      return new AnthropicProvider({ apiKey: key });
     }
     case "openai":
       // OpenAI adapter lands in batch 1.6. Until then, bootstrap returns null

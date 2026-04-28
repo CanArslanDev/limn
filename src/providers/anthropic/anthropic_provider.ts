@@ -11,10 +11,16 @@
  * - 5xx + network errors -> ProviderError("anthropic", cause)
  * - APIUserAbortError + APIConnectionTimeoutError -> ModelTimeoutError(timeoutMs, cause)
  *
- * Construction reads `ANTHROPIC_API_KEY` from process.env. If the key is
- * missing, request() throws AuthError on first invocation rather than at
- * construction time; this lets test code construct + register a provider
- * without a real key.
+ * Construction reads `ANTHROPIC_API_KEY` from process.env when no explicit
+ * key is supplied. If the key is missing, request() throws AuthError on
+ * first invocation rather than at construction time; this lets test code
+ * construct + register a provider without a real key.
+ *
+ * The constructor accepts `AnthropicProviderOptions` instead of positional
+ * arguments so future fields (custom baseURL, custom fetch implementation,
+ * default headers) can land without changing call sites. The `fetch` option
+ * forwards to the SDK's documented `fetch` constructor option, primarily
+ * used by tests to replay JSON fixtures from `test/fixtures/anthropic/`.
  *
  * Provider boundary note: this file is the documented `any`-tolerant boundary
  * for the Anthropic SDK. The SDK's `messages.create()` overloads return a
@@ -25,6 +31,32 @@
 
 import { AuthError, ModelTimeoutError, ProviderError, RateLimitError } from "../../errors/index.js";
 import type { Provider, ProviderRequest, ProviderResponse } from "../provider.js";
+
+/**
+ * Constructor options for {@link AnthropicProvider}. Options-object shape
+ * (rather than positional arguments) lets future additions land without
+ * breaking call sites.
+ */
+export interface AnthropicProviderOptions {
+  /**
+   * Anthropic API key. Defaults to `process.env.ANTHROPIC_API_KEY` when the
+   * `apiKey` field is omitted entirely. Passing the field explicitly with
+   * `undefined` bypasses the env-var fallback; this is useful when tests
+   * want to assert the missing-key behavior on a developer machine that
+   * has `ANTHROPIC_API_KEY` set in its shell. The constructor uses an
+   * `"apiKey" in options` check (not `??`) to distinguish the two paths.
+   */
+  readonly apiKey?: string | undefined;
+  /**
+   * Optional `fetch` implementation forwarded to the underlying SDK. The
+   * SDK's `ClientOptions.fetch` is documented as
+   * `(url: RequestInfo, init?: RequestInit) => Promise<Response>`, which
+   * the standard `fetch` satisfies. Test code injects a fake `fetch` that
+   * replays recorded fixtures from `test/fixtures/anthropic/`; production
+   * code omits this and the SDK uses the global `fetch`.
+   */
+  readonly fetch?: typeof globalThis.fetch | undefined;
+}
 
 /**
  * Subset of the Anthropic SDK's `Message` shape that the adapter consumes.
@@ -92,13 +124,23 @@ export class AnthropicProvider implements Provider {
   // so the catch site can `instanceof`-check without re-importing.
   private errors: SdkErrorClasses | undefined;
 
+  private readonly apiKey: string | undefined;
+  private readonly fetchOverride: typeof globalThis.fetch | undefined;
+
   /**
-   * Constructor reads from `process.env["ANTHROPIC_API_KEY"]` by default but
-   * accepts an explicit override. Tests pass a literal key so they need not
-   * mutate the process environment; production code typically takes the
-   * default path so the key only ever lives in env vars + memory.
+   * Construct a provider. Without arguments the constructor reads
+   * `ANTHROPIC_API_KEY` from `process.env` and uses the global `fetch`.
+   * Tests pass `{ apiKey: "test-key", fetch: fakeFetch }` so they need not
+   * mutate the process environment and can replay JSON fixtures without
+   * touching the network. The `apiKey` field is `keyof`-present in
+   * options even when `undefined`; supplying `{ apiKey: undefined }`
+   * explicitly skips the env-var fallback (useful for asserting the
+   * missing-key behavior on developer machines that have the var set).
    */
-  public constructor(private readonly apiKey: string | undefined = readApiKeyFromEnv()) {}
+  public constructor(options: AnthropicProviderOptions = {}) {
+    this.apiKey = "apiKey" in options ? options.apiKey : readApiKeyFromEnv();
+    this.fetchOverride = options.fetch;
+  }
 
   /**
    * Translate a Limn `ProviderRequest` into an Anthropic SDK call, then map
@@ -191,7 +233,13 @@ export class AnthropicProvider implements Provider {
    */
   private async ensureClient(): Promise<void> {
     if (this.client !== undefined && this.errors !== undefined) return;
-    let mod: { default: new (opts: { apiKey: string }) => unknown } & SdkErrorClasses;
+    let mod: {
+      default: new (opts: {
+        apiKey: string;
+        fetch?: typeof globalThis.fetch;
+        maxRetries?: number;
+      }) => unknown;
+    } & SdkErrorClasses;
     try {
       mod = (await import("@anthropic-ai/sdk")) as unknown as typeof mod;
     } catch (err) {
@@ -206,7 +254,17 @@ export class AnthropicProvider implements Provider {
     if (this.apiKey === undefined) {
       throw new AuthError("ANTHROPIC_API_KEY env var not set; cannot reach Anthropic.");
     }
-    this.client = new Anthropic({ apiKey: this.apiKey });
+    // The SDK's default maxRetries=2 would re-issue 5xx and 429 calls a few
+    // times before surfacing the error. Limn owns retry policy at the client
+    // layer (batch 1.4), so we disable the SDK's built-in retries to avoid
+    // double-retries and keep error mapping deterministic. The `fetch`
+    // override is forwarded conditionally so production code (no override)
+    // continues to use the SDK's bundled fetch resolution.
+    this.client = new Anthropic({
+      apiKey: this.apiKey,
+      maxRetries: 0,
+      ...(this.fetchOverride === undefined ? {} : { fetch: this.fetchOverride }),
+    });
     // The SDK exposes the error classes as static properties on the default
     // export. We extract them once and store the table so the catch site
     // does a plain `instanceof` against cached references.
