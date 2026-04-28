@@ -21,7 +21,6 @@ export default defineConfig({
         "src/cli/**",
         "src/inspect/**",
         // Phase 1 placeholders, removed as their batches land:
-        "src/client/ai.ts", // batch 1.1 + 1.7
         "src/client/options.ts", // batch 1.1 (types only; covered via usage)
         "src/agent/agent.ts", // Phase 3
         "src/providers/provider.ts", // batch 1.1 (types only; covered via usage)

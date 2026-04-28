@@ -51,9 +51,17 @@ const LAYER_RULES: readonly LayerRule[] = [
   { layer: "providers/registry.ts", mayImportFrom: ["providers"] },
   { layer: "providers/anthropic", mayImportFrom: ["providers", "errors"] },
   { layer: "providers/openai", mayImportFrom: ["providers", "errors"] },
+  { layer: "providers/_mock", mayImportFrom: ["providers", "errors"] },
   { layer: "config", mayImportFrom: ["providers/model_name"] },
   { layer: "agent", mayImportFrom: ["agent", "providers/model_name", "errors"] },
-  { layer: "client", mayImportFrom: ["client", "providers", "agent", "config", "trace", "errors"] },
+  {
+    layer: "hooks",
+    mayImportFrom: ["client/options", "providers/model_name", "errors"],
+  },
+  {
+    layer: "client",
+    mayImportFrom: ["client", "providers", "agent", "config", "hooks", "trace", "errors"],
+  },
   { layer: "inspect", mayImportFrom: ["trace"] },
   { layer: "cli", mayImportFrom: [] },
 ];
