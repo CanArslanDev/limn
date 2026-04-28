@@ -16,6 +16,12 @@
  * phase) would force a thread-through pattern the dispatcher does not
  * support. Mutation is contained to two hook classes that are written
  * together; the surface is small enough that reasoning stays local.
+ *
+ * What this state does NOT carry: the attempt counter. That value is
+ * owned by the dispatcher and arrives on `HookContext.attempt` for every
+ * phase; `TraceHook.onCallEnd` reads it from the context directly when
+ * building the persisted record. Mirroring it here would create two
+ * sources of truth for the same number.
  */
 
 export interface TraceState {
@@ -33,11 +39,6 @@ export interface TraceState {
    * Wall-clock millisecond when the call ended (set in `onCallEnd`).
    */
   finishedAtMs?: number;
-  /**
-   * Final attempt count. Mirrors `HookContext.attempt` at end-of-call.
-   * Defaults to 1 so a happy-path no-retry trace records `attempt: 1`.
-   */
-  attempt: number;
   /**
    * The provider request after redaction. RedactionHook.onCallStart
    * populates this; TraceHook reads it for the persisted record. When

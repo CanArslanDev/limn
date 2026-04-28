@@ -5,6 +5,9 @@
  * same shape.
  */
 
+// TODO(phase-2): consider raw ms vs ISO string for `timestamp`; the ISO
+//   form is human-friendly today, but the inspector may prefer raw ms for
+//   cheap arithmetic. Decide once the Phase 2 contract is set.
 export interface TraceRecord {
   readonly id: string;
   readonly timestamp: string;

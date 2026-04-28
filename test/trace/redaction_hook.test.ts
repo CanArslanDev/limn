@@ -14,7 +14,7 @@ import type { TraceState } from "../../src/hooks/trace_state.js";
 const ANT_KEY = "sk-ant-AAABBBCCCDDDDEEEFFFGGGHHH";
 
 function newState(): TraceState {
-  return { id: "trc_test", attempt: 1, redactedFields: [] };
+  return { id: "trc_test", redactedFields: [] };
 }
 
 function newCtx(overrides: Partial<HookContext> = {}): HookContext {

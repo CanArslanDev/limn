@@ -97,6 +97,16 @@ All notable changes to this project are documented here. Format follows
   `onCallSuccess`/`onCallEnd` after a successful retry recovery. The
   dispatcher now strips `error` and `response` at the top of each retry
   iteration so each phase sees only its own contract-relevant fields.
+- Redactor walker now guards against cyclic input via a per-call
+  `WeakMap` (original to clone), so a self-referential request payload
+  no longer stack-overflows the trace pipeline. The cleaned tree mirrors
+  the input's topology including cycles.
+- Trace sink-failure warning now includes the trace ID for correlation:
+  `[limn] trace sink "FileSystemTraceSink" failed to write trace
+  trc_<uuid>: <error>`.
+- Removed dead `attempt` field from `TraceState`; `TraceHook.onCallEnd`
+  now reads `ctx.attempt` directly from the dispatcher's `HookContext`,
+  eliminating the duplicated source of truth for the attempt counter.
 
 ### Notes
 

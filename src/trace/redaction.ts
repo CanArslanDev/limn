@@ -21,9 +21,14 @@
  * surfaces the path `messages.0.content`. A top-level string redaction
  * surfaces the empty path `""`.
  *
- * The redactor is total over JSON-serializable inputs. Cycles are not
- * possible in our pipeline (the records head straight to `JSON.stringify`
- * which would also reject them), so the walker has no cycle guard.
+ * The redactor is total over JSON-serializable inputs. Cyclic objects are
+ * tolerated via a per-call `WeakMap` (original -> clone) inside `walk`:
+ * each object is registered before its children are visited, so when
+ * recursion re-encounters the same original it returns the in-progress
+ * clone instead of recursing. The cleaned tree mirrors the input's
+ * topology including cycles. Defensive against future call sites (Phase
+ * 1.5 attachments, Phase 1.7 streaming state, Phase 3 agent state) where
+ * a cycle could appear before `JSON.stringify` would catch it.
  */
 
 const REDACTED = "[REDACTED]";
@@ -56,21 +61,44 @@ export interface RedactResult {
  */
 export function redactKeys(value: unknown): RedactResult {
   const redacted: string[] = [];
-  const cleaned = walk(value, "", redacted);
+  const cleaned = walk(value, "", redacted, new WeakMap());
   return { value: cleaned, redacted };
 }
 
-function walk(node: unknown, path: string, sink: string[]): unknown {
+/**
+ * `seen` maps each original object/array we have begun cloning to the
+ * fresh clone it was assigned. When recursion re-encounters the same
+ * original we return its clone instead of recursing, so the cleaned
+ * tree mirrors any cycles in the input (and we never stack-overflow).
+ * Pre-registering the clone before walking children is the standard
+ * cycle-tolerant deep-copy trick.
+ */
+function walk(
+  node: unknown,
+  path: string,
+  sink: string[],
+  seen: WeakMap<object, unknown>,
+): unknown {
   if (typeof node === "string") {
     return redactString(node, path, sink);
   }
   if (Array.isArray(node)) {
-    return node.map((item, idx) => walk(item, joinPath(path, String(idx)), sink));
+    const existing = seen.get(node);
+    if (existing !== undefined) return existing;
+    const out: unknown[] = [];
+    seen.set(node, out);
+    for (let i = 0; i < node.length; i++) {
+      out.push(walk(node[i], joinPath(path, String(i)), sink, seen));
+    }
+    return out;
   }
   if (node !== null && typeof node === "object") {
+    const existing = seen.get(node);
+    if (existing !== undefined) return existing;
     const out: Record<string, unknown> = {};
+    seen.set(node, out);
     for (const [key, val] of Object.entries(node)) {
-      out[key] = walk(val, joinPath(path, key), sink);
+      out[key] = walk(val, joinPath(path, key), sink, seen);
     }
     return out;
   }

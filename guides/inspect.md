@@ -43,6 +43,12 @@ mutated, so the inspector can surface "what was scrubbed" without
 leaking the secret itself. Agent runs and tool calls (Phase 3) carry
 `parentTraceId` so the inspector can render a tree.
 
+Locators use `.` for both object keys and array indices: a redaction
+inside `{ messages: [{ content: "sk-..." }] }` surfaces as
+`messages.0.content`. The format is intentionally simple to parse
+character-by-character; bracket syntax (`messages[0].content`) is
+reserved for a future revision if the inspector needs it.
+
 ## Running the inspector
 
 Phase 2 placeholder (target shape):

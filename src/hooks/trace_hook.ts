@@ -108,7 +108,6 @@ export class TraceHook implements Hook {
    */
   public async onCallEnd(ctx: HookContext): Promise<void> {
     this.state.finishedAtMs = Date.now();
-    this.state.attempt = ctx.attempt;
 
     const startedAt = this.state.startedAtMs ?? this.state.finishedAtMs;
     const latencyMs = Math.max(0, this.state.finishedAtMs - startedAt);
@@ -126,7 +125,7 @@ export class TraceHook implements Hook {
       model: this.model,
       provider: this.provider,
       latencyMs,
-      attempts: this.state.attempt,
+      attempts: ctx.attempt,
       usage,
       request: persistedRequest,
       response: this.state.response,
@@ -137,7 +136,10 @@ export class TraceHook implements Hook {
     try {
       await this.sink.write(record);
     } catch (err) {
-      console.warn(`[limn] trace sink "${this.sink.constructor.name}" failed to write:`, err);
+      console.warn(
+        `[limn] trace sink "${this.sink.constructor.name}" failed to write trace ${this.state.id}:`,
+        err,
+      );
     }
   }
 }

@@ -53,6 +53,10 @@ export class FileSystemTraceSink implements TraceSink {
    * directories are small (<1000 records); Phase 2 will introduce
    * pagination if browsing large dirs gets slow.
    */
+  // TODO(phase-2): performance pass for inspector, add listRecent(n) and a
+  //   file-name-indexed read(id) so the inspector does not load every file.
+  // TODO(phase-2): inspector likely wants newest-first; revisit ordering
+  //   once the Phase 2 contract is set.
   public async list(): Promise<readonly TraceRecord[]> {
     let entries: string[];
     try {

@@ -93,8 +93,10 @@ export class RedactionHook implements Hook {
       code: err.code,
       message: typeof cleanedMessage === "string" ? cleanedMessage : err.message,
     };
-    for (const path of redacted) {
-      this.state.redactedFields.push(path === "" ? "error.message" : `error.message.${path}`);
+    // redactKeys on a string returns "" as the only locator; we surface
+    // this as "error.message" without further path concatenation.
+    for (const _ of redacted) {
+      this.state.redactedFields.push("error.message");
     }
   }
 }

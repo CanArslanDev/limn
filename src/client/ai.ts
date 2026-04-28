@@ -52,6 +52,14 @@ const notImplemented = (fn: string): never => {
  *
  * Tests that only care about the retry/sleep behavior (not trace) ignore
  * the context arg and build a hook-less dispatcher.
+ *
+ * Asymmetric construction note: per-call values (model, provider, request,
+ * trace state) flow through this context because they change every call.
+ * Cross-call values (sink, retry strategy, resolved config) live on the
+ * factory closure. {@link buildDefaultDispatcher} bridges the two.
+ *
+ * @internal not part of the public surface; do not import from `limn`.
+ *   Prefer constructing your own `HookDispatcher` if you need custom wiring.
  */
 export interface DispatcherFactoryContext {
   readonly state: TraceState;
@@ -84,6 +92,11 @@ type DispatcherFactory = (ctx: DispatcherFactoryContext) => HookDispatcher;
  * sink. `config` defaults to `DEFAULT_CONFIG`; the integration smoke
  * passes a config pinned to a tmp directory so its trace files do not
  * land in the project's `.limn/`.
+ *
+ * @internal not part of the public surface; do not import from `limn`.
+ *   Used by the default dispatcher factory and by integration tests that
+ *   need to override the trace dir. Construct your own `HookDispatcher`
+ *   directly if you need custom wiring.
  */
 export function buildDefaultDispatcher(
   ctx: DispatcherFactoryContext,
@@ -185,7 +198,7 @@ export const ai: Ai = {
     };
 
     const traceId = newTraceId();
-    const state: TraceState = { id: traceId, attempt: 1, redactedFields: [] };
+    const state: TraceState = { id: traceId, redactedFields: [] };
     const dispatcher = currentDispatcherFactory({
       state,
       kind: "ask",

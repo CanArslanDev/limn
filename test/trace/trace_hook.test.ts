@@ -28,7 +28,7 @@ class RecordingSink implements TraceSink {
 }
 
 function newState(overrides: Partial<TraceState> = {}): TraceState {
-  return { id: "trc_test", attempt: 1, redactedFields: [], ...overrides };
+  return { id: "trc_test", redactedFields: [], ...overrides };
 }
 
 function newCtx(overrides: Partial<HookContext> = {}): HookContext {
@@ -256,6 +256,12 @@ describe("TraceHook", () => {
 
     await expect(hook.onCallEnd(successCtx)).resolves.toBeUndefined();
     expect(warn).toHaveBeenCalled();
+    // The warning includes the trace ID so users can correlate the warning
+    // to a specific call when scanning logs.
+    const firstArg = warn.mock.calls[0]?.[0];
+    expect(typeof firstArg).toBe("string");
+    expect(firstArg as string).toContain("trc_test");
+    expect(firstArg as string).toContain("RecordingSink");
   });
 
   it("produces a positive latency when the call took measurable time", async () => {

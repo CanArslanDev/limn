@@ -93,4 +93,30 @@ describe("redactKeys", () => {
     expect(redactKeys(null).value).toBe(null);
     expect(redactKeys(undefined).value).toBe(undefined);
   });
+
+  it("does not stack overflow on cyclic objects", () => {
+    const obj: { self?: unknown; safe: string } = {
+      safe: "sk-ant-FAKEFAKEFAKEFAKEFAKEFAKE12345678",
+    };
+    obj.self = obj;
+    const result = redactKeys(obj);
+    // Cycle was preserved; the safe field still got redacted.
+    const value = result.value as { self: unknown; safe: string };
+    expect(value.safe).toBe("[REDACTED]");
+    expect(value.self).toBe(value); // still self-referential
+    expect(result.redacted).toContain("safe");
+  });
+
+  it("uses the same [REDACTED] marker for every key shape (no pattern attribution)", () => {
+    const input = {
+      a: "sk-ant-FAKEFAKEFAKEFAKEFAKEFAKE12345678",
+      b: "sk-proj-FAKEFAKEFAKEFAKEFAKEFAKE12345678",
+      c: "sk-FAKEFAKEFAKEFAKEFAKEFAKE12345678",
+    };
+    const result = redactKeys(input);
+    const value = result.value as { a: string; b: string; c: string };
+    expect(value.a).toBe("[REDACTED]");
+    expect(value.b).toBe("[REDACTED]");
+    expect(value.c).toBe("[REDACTED]");
+  });
 });
