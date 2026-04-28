@@ -85,7 +85,7 @@ Per-error-type policy on the default strategy:
 - `AuthError`: never retries. A bad key never becomes good by waiting.
 - `RateLimitError`: honors `retryAfterMs` when the provider supplies it; otherwise computed backoff. Capped at `retry.maxAttempts`.
 - `ProviderError` with `retryable: true` (5xx, transport): exponential backoff up to `retry.maxAttempts`. Deterministic 4xx faults carry `retryable: false` and surface immediately.
-- `ModelTimeoutError`: retries up to `floor(maxAttempts / 2)` total attempts. Timeouts are usually deterministic, so the budget is halved by design; bump `retry.maxAttempts` if you want more timeout retries.
+- `ModelTimeoutError`: retries only when `retry.maxAttempts >= 4`. The cap is `floor(maxAttempts / 2)` total attempts and a `ModelTimeoutError` surfaces once `attempt >= cap`, so with the default `maxAttempts: 3` the cap is `1` and the first timeout surfaces immediately. Bump `retry.maxAttempts` if you want any timeout retry budget; timeouts are usually deterministic so the policy halves the budget by design.
 - `SchemaValidationError`: not transport-level; retried by `ai.extract` only when `retryOnSchemaFailure: true` is set on the call.
 
 ## Where to go next

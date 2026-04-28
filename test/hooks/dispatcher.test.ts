@@ -445,6 +445,61 @@ describe("HookDispatcher retry integration", () => {
     expect(observedSuccessAttempt).toBe(2);
   });
 
+  it("does not leak prior attempt's error into onCallSuccess after a retry recovery", async () => {
+    const seenAtSuccess: Array<{ hasError: boolean; hasResponse: boolean; attempt: number }> = [];
+    const seenAtEnd: Array<{ hasError: boolean; hasResponse: boolean; attempt: number }> = [];
+    const hook: Hook = {
+      name: "spy",
+      onCallSuccess(ctx) {
+        seenAtSuccess.push({
+          hasError: ctx.error !== undefined,
+          hasResponse: ctx.response !== undefined,
+          attempt: ctx.attempt,
+        });
+      },
+      onCallEnd(ctx) {
+        seenAtEnd.push({
+          hasError: ctx.error !== undefined,
+          hasResponse: ctx.response !== undefined,
+          attempt: ctx.attempt,
+        });
+      },
+    };
+    const { sleepFn } = recordingSleep();
+    const dispatcher = new HookDispatcher({
+      hooks: [hook],
+      retry: retryOnce,
+      sleepFn,
+    });
+    let calls = 0;
+    const result = await dispatcher.run(baseCtx, async () => {
+      calls += 1;
+      if (calls === 1) throw new ProviderError("transient", "anthropic");
+      return okResult;
+    });
+    expect(result.content).toBe("hello");
+    expect(seenAtSuccess).toEqual([{ hasError: false, hasResponse: true, attempt: 2 }]);
+    expect(seenAtEnd).toEqual([{ hasError: false, hasResponse: true, attempt: 2 }]);
+  });
+
+  it("wraps unknown throws as non-retryable ProviderError", async () => {
+    const { sleepFn } = recordingSleep();
+    const dispatcher = new HookDispatcher({
+      retry: new ExponentialBackoffStrategy({ config: testConfig().retry }),
+      sleepFn,
+    });
+    let calls = 0;
+    await expect(
+      dispatcher.run(baseCtx, async () => {
+        calls += 1;
+        throw new Error("oops");
+      }),
+    ).rejects.toThrow("oops");
+    // Unknown throws are wrapped non-retryable, so the strategy gives up after
+    // attempt 1 instead of burning the full budget on a deterministic failure.
+    expect(calls).toBe(1);
+  });
+
   it("uses real setTimeout-backed sleep when no sleepFn is supplied (smoke; tiny delay)", async () => {
     const tinyDelayStrategy: RetryStrategy = {
       decide: (attempt) => (attempt === 1 ? 1 : null),
@@ -459,6 +514,10 @@ describe("HookDispatcher retry integration", () => {
     });
     expect(calls).toBe(2);
     expect(result).toEqual(okResult);
-    expect(Date.now() - start).toBeGreaterThanOrEqual(0); // >=0 (low-tolerance smoke)
+    // Strategy returned a 1ms delay; if `defaultSleep` were a no-op the
+    // elapsed time would be sub-millisecond. Asserting `>= 1` proves the
+    // setTimeout-backed sleep actually fired without binding to a brittle
+    // upper bound.
+    expect(Date.now() - start).toBeGreaterThanOrEqual(1);
   });
 });

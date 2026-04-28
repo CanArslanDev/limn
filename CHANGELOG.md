@@ -47,6 +47,12 @@ All notable changes to this project are documented here. Format follows
   `HookDispatcherOptions` object (`hooks`, `retry`, `sleepFn`) while still
   supporting the legacy `readonly Hook[]` form for backward compatibility;
   `sleepFn` is the test-injection seam for sleep recording.
+- `ProviderError` now carries a `retryable` boolean (default `true`). The
+  Anthropic adapter sets `retryable: false` for the bare-`APIError`
+  fallthrough (4xx client faults), the `Unexpected Anthropic error` catch-all,
+  and the defensive `role: "system"` guard, so the new retry strategy
+  rethrows immediately on deterministic failures instead of burning attempts
+  on requests that will fail the same way.
 
 ### Changed
 
@@ -64,12 +70,13 @@ All notable changes to this project are documented here. Format follows
   in the adapter); `AnthropicProvider` + `AnthropicProviderOptions` now
   re-exported from the package root. Fake-fetch test helper extracted to
   `test/_helpers/fake_fetch.ts` for reuse by the OpenAI adapter (batch 1.6).
-- `ProviderError` now carries a `retryable` boolean (default `true`). The
-  Anthropic adapter sets `retryable: false` for the bare-`APIError`
-  fallthrough (4xx client faults), the `Unexpected Anthropic error` catch-all,
-  and the defensive `role: "system"` guard, so the new retry strategy
-  rethrows immediately on deterministic failures instead of burning attempts
-  on requests that will fail the same way.
+
+### Fixed
+
+- Hook context no longer leaks the prior failed attempt's `error` into
+  `onCallSuccess`/`onCallEnd` after a successful retry recovery. The
+  dispatcher now strips `error` and `response` at the top of each retry
+  iteration so each phase sees only its own contract-relevant fields.
 
 ### Notes
 

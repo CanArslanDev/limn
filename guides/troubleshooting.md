@@ -46,6 +46,7 @@ The request did not return within `timeoutMs` (default 60_000).
 
 - Long generations may legitimately exceed the default. Bump `timeoutMs` per call or in `limn.config.ts`.
 - For genuinely long tasks, prefer `ai.stream` so partial output is visible while the model is still working.
+- Default retry policy: timeouts retry only when `retry.maxAttempts >= 4`. The cap is `floor(maxAttempts / 2)`; with the default `maxAttempts: 3` the cap is `1` so the first `ModelTimeoutError` surfaces immediately. Bump `retry.maxAttempts` if you want any timeout retry budget.
 - Recovery: retry with a longer timeout, or surface to the user.
 
 ## `SchemaValidationError`

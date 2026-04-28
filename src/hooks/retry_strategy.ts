@@ -67,6 +67,10 @@ export interface RetryStrategy {
  */
 export const NO_RETRY: RetryStrategy = { decide: () => null };
 
+// Hard ceiling on a single computed delay. Promoting this to `RetryConfig`
+// is deferred (batch-1.3 review item I2): no concrete user need yet, and the
+// 30s cap matches the README copy. Revisit when a Layer 1 caller asks to
+// tune it.
 const MAX_BACKOFF_MS = 30_000;
 
 export interface ExponentialBackoffOptions {
@@ -132,6 +136,10 @@ export class ExponentialBackoffStrategy implements RetryStrategy {
         // Constant delay, no jitter. The user opted out of randomization.
         return this.config.initialDelayMs;
       case "exponential": {
+        // Full-jitter: `Math.floor(randomFn() * exp)` can return 0 when
+        // `randomFn()` is near zero. Documented in batch-1.3 review (item
+        // M1); a dedicated 0ms-jitter test was deferred since the math is
+        // already exercised by the strategy unit tests.
         const exp = Math.min(this.config.initialDelayMs * 2 ** (attempt - 1), MAX_BACKOFF_MS);
         return Math.floor(this.randomFn() * exp);
       }

@@ -28,7 +28,7 @@ import { NO_RETRY, type RetryStrategy } from "./retry_strategy.js";
  * immutable; if a hook needs cross-phase memory it keeps its own state.
  */
 export interface HookContext {
-  /** Trace ID, prefixed `trc_`, mintied once at call entry. Stable across phases. */
+  /** Trace ID, prefixed `trc_`, minted once at call entry. Stable across phases. */
   readonly traceId: string;
   /** Model the call resolved to (post option-merge). */
   readonly model: ModelName;
@@ -199,7 +199,16 @@ export class HookDispatcher {
     try {
       while (true) {
         attempt += 1;
-        ctx = { ...ctx, attempt };
+        // Strip `error` and `response` from the prior iteration so a
+        // successful retry does not surface the failed attempt's `error` to
+        // `onCallSuccess`/`onCallEnd`. The JSDoc on `HookContext.error` /
+        // `HookContext.response` (above) names "populated only after the
+        // matching phase" as the contract; we enforce it here. The
+        // destructure-omit pattern is the cleanest fit for
+        // `exactOptionalPropertyTypes`: spreading `error: undefined`
+        // explicitly would re-introduce the key on the new object.
+        const { error: _droppedError, response: _droppedResponse, ...prior } = ctx;
+        ctx = { ...prior, attempt };
         if (attempt > 1) {
           await this.fire("onRetry", ctx);
         }
@@ -261,6 +270,15 @@ export class HookDispatcher {
    */
   private toLimnError(err: unknown): LimnError {
     if (err instanceof LimnError) return err;
-    return new ProviderError(err instanceof Error ? err.message : String(err), "unknown", err);
+    // Unknown throws are deterministic by assumption: we have no signal that
+    // re-issuing the same request would behave differently, so mark the
+    // wrapper non-retryable. Mirrors the philosophy in
+    // `anthropic_provider.ts` for the "Unexpected ... error" catch-all.
+    return new ProviderError(
+      err instanceof Error ? err.message : String(err),
+      "unknown",
+      err,
+      false,
+    );
   }
 }

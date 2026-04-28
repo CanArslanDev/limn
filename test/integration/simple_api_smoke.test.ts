@@ -8,7 +8,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { ai } from "../../src/client/ai.js";
+import { __setDispatcherFactoryForTests, ai } from "../../src/client/ai.js";
 import { MockProvider } from "../../src/providers/_mock/mock_provider.js";
 import { getProvider, registerProvider, unregisterProvider } from "../../src/providers/registry.js";
 
@@ -17,6 +17,11 @@ describe("ai.ask smoke (MockProvider)", () => {
   let previous: ReturnType<typeof getProvider> | undefined;
 
   beforeEach(() => {
+    // Defense against test-pollution: if another test file's afterEach
+    // failed to reset the dispatcher factory, this smoke would observe a
+    // recording dispatcher instead of the production default. Explicit
+    // reset here keeps the smoke an independent oracle.
+    __setDispatcherFactoryForTests(undefined);
     try {
       previous = getProvider("anthropic");
     } catch {
