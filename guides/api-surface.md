@@ -2,13 +2,13 @@
 
 Every public function and type that ships from `limn`. The README has the 5-minute tour; this is the long form.
 
-> Phase 1 is in flight. The shapes here describe the API target; runtime behavior arrives once the providers, retry loop, and trace pipeline ship.
+> Phase 1 is in flight. `ai.ask` is live against Anthropic as of batch 1.2; `ai.chat`, `ai.extract`, and `ai.stream` remain placeholders until their batches land.
 
 ## `ai` namespace
 
 ### `ai.ask(prompt, options?) -> Promise<string>`
 
-Single-shot question. The simplest possible call.
+Single-shot question. The simplest possible call. As of batch 1.2 this resolves end-to-end against Anthropic when `ANTHROPIC_API_KEY` is set.
 
 ```ts
 const summary = await ai.ask("Summarize this:", longText);

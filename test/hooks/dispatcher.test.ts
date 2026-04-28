@@ -104,7 +104,7 @@ describe("HookDispatcher", () => {
   });
 
   it("populates ctx.response in the onCallSuccess phase", async () => {
-    let captured: { content?: string } | undefined;
+    let captured: { content?: string | undefined } | undefined;
     const hook: Hook = {
       name: "capture",
       onCallSuccess: (ctx) => {

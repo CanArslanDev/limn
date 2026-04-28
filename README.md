@@ -59,10 +59,12 @@ This README is the 5-minute tour. For deeper material, see [`guides/`](guides/):
 
 ## Quickstart
 
+Set `ANTHROPIC_API_KEY` in your environment (`export ANTHROPIC_API_KEY=sk-ant-...`), then:
+
 ```ts
 import { ai } from "limn";
 
-// Single-shot question
+// Single-shot question. Calls Anthropic end-to-end as of batch 1.2.
 const summary = await ai.ask("Summarize this:", longText);
 
 // Conversation

@@ -65,10 +65,11 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
+    "typecheck:test": "tsc -p tsconfig.test.json --noEmit",
     "lint": "biome check .",
     "lint:fix": "biome check --write .",
     "format": "biome format --write .",
-    "verify": "pnpm run lint && pnpm run typecheck && pnpm run test",
+    "verify": "pnpm run lint && pnpm run typecheck && pnpm run typecheck:test && pnpm run test",
     "prepublishOnly": "pnpm run verify && pnpm run build",
     "release": "pnpm run verify && pnpm run build && npm publish --access public"
   },

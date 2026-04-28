@@ -4,7 +4,9 @@
  * by exactly one provider.
  */
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { AuthError } from "../../src/errors/index.js";
+import { AnthropicProvider } from "../../src/providers/anthropic/anthropic_provider.js";
 import { ANTHROPIC_MODELS, OPENAI_MODELS } from "../../src/providers/model_name.js";
 import type { Provider } from "../../src/providers/provider.js";
 import {
@@ -73,15 +75,42 @@ describe("registerProvider + getProvider", () => {
     expect(getProvider("openai")).toBe(second);
   });
 
-  it("getProvider throws a clear message when the name was never registered", () => {
-    // Cast to bypass the union check; simulates a future provider name not
-    // yet wired into the registry.
-    expect(() => getProvider("ghost" as ProviderName)).toThrow(/Provider "ghost" not registered/);
+  it("getProvider throws AuthError mentioning the env var when bootstrap has nothing to bootstrap", () => {
+    // No registration, no env key: bootstrap returns null, getProvider should
+    // throw AuthError pointing at the env var to set. We stub the env to "" so
+    // the bootstrap path treats the key as missing even on developer machines
+    // that have ANTHROPIC_API_KEY set in their shell.
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    try {
+      expect(() => getProvider("anthropic")).toThrow(AuthError);
+      expect(() => getProvider("anthropic")).toThrow(/ANTHROPIC_API_KEY/);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
-  it("unregisterProvider removes a provider; subsequent getProvider throws", () => {
-    registerProvider("anthropic", new FakeProvider("anthropic"));
-    unregisterProvider("anthropic");
-    expect(() => getProvider("anthropic")).toThrow(/Provider "anthropic" not registered/);
+  it("unregisterProvider removes a provider; subsequent getProvider re-bootstraps or throws", () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "");
+    try {
+      registerProvider("anthropic", new FakeProvider("anthropic"));
+      unregisterProvider("anthropic");
+      expect(() => getProvider("anthropic")).toThrow(AuthError);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("getProvider lazily bootstraps an AnthropicProvider when the env key is set and no provider was registered", () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-test");
+    try {
+      // Defensive: ensure the registry slot is empty before bootstrap.
+      unregisterProvider("anthropic");
+      const p = getProvider("anthropic");
+      expect(p).toBeInstanceOf(AnthropicProvider);
+      // Subsequent calls return the same cached instance, not a fresh one.
+      expect(getProvider("anthropic")).toBe(p);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });

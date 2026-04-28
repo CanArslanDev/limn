@@ -32,7 +32,9 @@ export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 ```
 
-You can also set them in `limn.config.ts` (see below) or pass them per call. The local-first trace pipeline never persists keys to disk; they live in process memory only.
+As of batch 1.2 the Anthropic adapter is wired end-to-end: the first time your code calls `ai.ask` (or any future Layer 1 entry point) without an explicitly registered provider, Limn lazily constructs an `AnthropicProvider` that reads `ANTHROPIC_API_KEY` from `process.env`. If the env var is missing, the call rejects with an `AuthError` naming the variable to set rather than a generic "not registered" error.
+
+You can also set keys in `limn.config.ts` (see below) or pass them per call. The local-first trace pipeline never persists keys to disk; they live in process memory only.
 
 ## Your first call
 

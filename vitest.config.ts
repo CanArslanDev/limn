@@ -24,7 +24,6 @@ export default defineConfig({
         "src/client/options.ts", // batch 1.1 (types only; covered via usage)
         "src/agent/agent.ts", // Phase 3
         "src/providers/provider.ts", // batch 1.1 (types only; covered via usage)
-        "src/providers/anthropic/**", // batch 1.2
         "src/providers/openai/**", // batch 1.6
         "src/trace/**", // batch 1.4
       ],

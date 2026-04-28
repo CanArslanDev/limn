@@ -69,9 +69,14 @@ A registered tool's `run` callback threw. Carries `toolName` and `toolInput`.
 
 Add the model name to `src/providers/model_name.ts` and map it to the right provider in `src/providers/registry.ts`. Then send a PR.
 
-### "Provider 'openai' not registered. Did you set the API key for it?"
+### `AuthError: Provider "anthropic" requires an API key. Set ANTHROPIC_API_KEY ...`
 
-You called a model owned by a provider whose key is missing. Set the env var or pass it via `limn.config.ts`.
+You called a model owned by a vendor whose key is missing AND no provider was registered manually. Two fixes:
+
+- Set the env var (`export ANTHROPIC_API_KEY=sk-ant-...` or the OpenAI equivalent) and rerun. Limn lazily constructs the provider on the next call.
+- Or call `registerProvider("anthropic", new AnthropicProvider(myKey))` explicitly before the first `ai.ask` if your key lives somewhere other than the env (a secret manager, a CLI flag, etc.).
+
+The same message variant exists for `OPENAI_API_KEY` once batch 1.6 lights up the OpenAI adapter; until then any call against an OpenAI model raises this AuthError because no bootstrap path exists yet.
 
 ### Schema diff explodes in the inspector
 
