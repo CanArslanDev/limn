@@ -4,5 +4,5 @@
  * surface lands (batch 1.3 retry hook). For now batch 1.1 keeps the
  * dispatcher internal.
  */
-export { HookDispatcher } from "./dispatcher.js";
+export { HookDispatcher, newTraceId } from "./dispatcher.js";
 export type { Hook, HookContext } from "./dispatcher.js";

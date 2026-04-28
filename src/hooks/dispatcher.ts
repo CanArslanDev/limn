@@ -17,8 +17,7 @@
  * model output. We catch + warn per-phase so other hooks still run.
  */
 import type { ChatMessage } from "../client/options.js";
-import type { LimnError } from "../errors/index.js";
-import { ProviderError } from "../errors/index.js";
+import { LimnError, ProviderError } from "../errors/index.js";
 import type { ModelName } from "../providers/model_name.js";
 
 /**
@@ -72,7 +71,7 @@ export interface Hook {
   onCallEnd?(ctx: HookContext): void | Promise<void>;
 }
 
-type Phase = "onCallStart" | "onCallSuccess" | "onCallError" | "onRetry" | "onCallEnd";
+type Phase = "onCallStart" | "onCallSuccess" | "onCallError" | "onCallEnd";
 
 /**
  * The shape the dispatcher's `exec` must return. Mirrors the relevant slice
@@ -87,10 +86,13 @@ export interface DispatcherResult {
 
 /**
  * Generates a `trc_<uuid>` trace ID. Uses `crypto.randomUUID` (Node 20.10+
- * has it on the global). When the trace pipeline lands (batch 1.4) the
- * helper will move to `src/trace/` per the shared-helper-first principle.
+ * has it on the global). Module-level export so callers (`ai.ask`,
+ * future `ai.chat`) mint trace IDs without reaching through a static
+ * method on the dispatcher class. When the trace pipeline lands (batch
+ * 1.4) the helper moves to `src/trace/` per the shared-helper-first
+ * principle; the existing import path becomes a re-export at that point.
  */
-function newTraceId(): string {
+export function newTraceId(): string {
   return `trc_${crypto.randomUUID()}`;
 }
 
@@ -112,16 +114,6 @@ export class HookDispatcher {
 
   public constructor(hooks: readonly Hook[] = []) {
     this.hooks = hooks;
-  }
-
-  /**
-   * Mint a fresh trace ID. Exposed so callers can pre-build the initial
-   * `HookContext` shape without reaching for the helper directly. (The
-   * helper itself is private; the trace pipeline in batch 1.4 owns the
-   * canonical generator.)
-   */
-  public static newTraceId(): string {
-    return newTraceId();
   }
 
   /**
@@ -177,14 +169,16 @@ export class HookDispatcher {
    * Normalize an unknown thrown value into a `LimnError`. Hooks always see a
    * typed error in `ctx.error`; downstream rethrow keeps the original value
    * so the public surface preserves whatever the provider raised.
+   *
+   * Narrows on the abstract `LimnError` base, not on `ProviderError`, so
+   * every typed subclass (RateLimitError, AuthError, ModelTimeoutError,
+   * SchemaValidationError, ToolExecutionError) reaches the hook unchanged.
+   * Anything else (a bare `Error`, a string throw) is wrapped in a generic
+   * `ProviderError` with provider="unknown" so the typed-error contract on
+   * `HookContext.error` holds for arbitrary throws too.
    */
   private toLimnError(err: unknown): LimnError {
-    if (err instanceof ProviderError) return err;
-    // Late-import the LimnError class to avoid a circular dep with errors/.
-    // ProviderError is the most generic typed wrapper available in batch 1.1;
-    // batch 1.2 may add finer-grained variants (auth, timeout) at the adapter
-    // boundary which already produce typed errors before reaching here.
-    const message = err instanceof Error ? err.message : String(err);
-    return new ProviderError(message, "unknown", err);
+    if (err instanceof LimnError) return err;
+    return new ProviderError(err instanceof Error ? err.message : String(err), "unknown", err);
   }
 }

@@ -9,7 +9,7 @@ import type { z } from "zod";
 import { agent } from "../agent/agent.js";
 import type { ChatMessage as ProviderChatMessage } from "../client/options.js";
 import { DEFAULT_CONFIG } from "../config/limn_config.js";
-import { HookDispatcher } from "../hooks/dispatcher.js";
+import { HookDispatcher, newTraceId } from "../hooks/dispatcher.js";
 import type { ProviderRequest } from "../providers/provider.js";
 import { getProvider, providerFor } from "../providers/registry.js";
 import type {
@@ -97,7 +97,7 @@ export const ai: Ai = {
     const dispatcher = new HookDispatcher();
     const result = await dispatcher.run(
       {
-        traceId: HookDispatcher.newTraceId(),
+        traceId: newTraceId(),
         model,
         messages,
       },

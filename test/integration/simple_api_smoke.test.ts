@@ -10,7 +10,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { ai } from "../../src/client/ai.js";
 import { MockProvider } from "../../src/providers/_mock/mock_provider.js";
-import { getProvider, registerProvider } from "../../src/providers/registry.js";
+import { getProvider, registerProvider, unregisterProvider } from "../../src/providers/registry.js";
 
 describe("ai.ask smoke (MockProvider)", () => {
   let mock: MockProvider;
@@ -30,6 +30,10 @@ describe("ai.ask smoke (MockProvider)", () => {
     mock.reset();
     if (previous !== undefined) {
       registerProvider("anthropic", previous);
+    } else {
+      // No prior registration. Explicitly unregister so the mock does not
+      // leak into the next test file in this Vitest worker.
+      unregisterProvider("anthropic");
     }
   });
 

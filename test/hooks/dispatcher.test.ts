@@ -5,8 +5,8 @@
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProviderError } from "../../src/errors/index.js";
-import { type Hook, HookDispatcher } from "../../src/hooks/dispatcher.js";
+import { ProviderError, RateLimitError } from "../../src/errors/index.js";
+import { type Hook, HookDispatcher, newTraceId } from "../../src/hooks/dispatcher.js";
 
 const baseCtx = {
   traceId: "trc_test",
@@ -146,6 +146,27 @@ describe("HookDispatcher", () => {
     expect(observedAttempt).toBe(1);
   });
 
+  it("preserves LimnError subclasses (RateLimitError) on ctx.error without re-wrapping", async () => {
+    let capturedError: unknown;
+    let capturedCode: string | undefined;
+    const hook: Hook = {
+      name: "capture",
+      onCallError: (ctx) => {
+        capturedError = ctx.error;
+        capturedCode = ctx.error?.code;
+      },
+    };
+    const dispatcher = new HookDispatcher([hook]);
+    const rateLimit = new RateLimitError("slow down", 250);
+    await expect(
+      dispatcher.run(baseCtx, async () => {
+        throw rateLimit;
+      }),
+    ).rejects.toBe(rateLimit);
+    expect(capturedError).toBeInstanceOf(RateLimitError);
+    expect(capturedCode).toBe("RATE_LIMIT");
+  });
+
   it("wraps non-LimnError throws into a ProviderError when populating ctx.error", async () => {
     let capturedCode: string | undefined;
     const hook: Hook = {
@@ -163,8 +184,8 @@ describe("HookDispatcher", () => {
     expect(capturedCode).toBe("PROVIDER_ERROR");
   });
 
-  it("HookDispatcher.newTraceId() returns a trc_-prefixed string", () => {
-    const id = HookDispatcher.newTraceId();
+  it("newTraceId() returns a trc_-prefixed string", () => {
+    const id = newTraceId();
     expect(id.startsWith("trc_")).toBe(true);
     expect(id.length).toBeGreaterThan("trc_".length);
   });

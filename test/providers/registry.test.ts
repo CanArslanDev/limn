@@ -12,6 +12,7 @@ import {
   getProvider,
   providerFor,
   registerProvider,
+  unregisterProvider,
 } from "../../src/providers/registry.js";
 
 class FakeProvider implements Provider {
@@ -30,10 +31,11 @@ class FakeProvider implements Provider {
 const NAMES: readonly ProviderName[] = ["anthropic", "openai"];
 
 afterEach(() => {
-  // Reset the module-scoped registry between tests by registering fresh
-  // throwing providers so subsequent describe blocks start from a known state.
+  // Reset the module-scoped registry between tests so subsequent describe
+  // blocks (and other test files in the same Vitest worker) start from the
+  // "no provider registered" state a fresh process would see.
   for (const n of NAMES) {
-    registerProvider(n, new FakeProvider(n));
+    unregisterProvider(n);
   }
 });
 
@@ -75,5 +77,11 @@ describe("registerProvider + getProvider", () => {
     // Cast to bypass the union check; simulates a future provider name not
     // yet wired into the registry.
     expect(() => getProvider("ghost" as ProviderName)).toThrow(/Provider "ghost" not registered/);
+  });
+
+  it("unregisterProvider removes a provider; subsequent getProvider throws", () => {
+    registerProvider("anthropic", new FakeProvider("anthropic"));
+    unregisterProvider("anthropic");
+    expect(() => getProvider("anthropic")).toThrow(/Provider "anthropic" not registered/);
   });
 });

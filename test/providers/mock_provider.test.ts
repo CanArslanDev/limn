@@ -83,4 +83,27 @@ describe("MockProvider", () => {
     const mock = new MockProvider("openai");
     expect(mock.name).toBe("openai");
   });
+
+  it("public arrays cannot be mutated externally (TS type guard)", () => {
+    const mock = new MockProvider();
+    // The next three statements must each be a TS error: the public surface
+    // is readonly so consumers cannot bypass pushResponse / pushError / reset.
+    // If TS does not flag a line, the @ts-expect-error directive itself
+    // becomes a compile error and breaks the typecheck gate, which is
+    // exactly the signal we want.
+    // @ts-expect-error - responses is readonly to external callers
+    mock.responses.push(res("nope"));
+    // @ts-expect-error - errors is readonly to external callers
+    mock.errors.push(new Error("nope"));
+    // @ts-expect-error - requests is readonly to external callers
+    mock.requests.push(sampleRequest);
+
+    // Runtime sanity: the public API still exposes read access. We expect
+    // the @ts-expect-error suppressions above to allow the calls at runtime
+    // (TS only erases types), so the arrays now contain the pushed items.
+    // The contract this test locks is the COMPILE-TIME readonly-ness, not
+    // runtime immutability (which would require Object.freeze and a real
+    // perf hit on every push).
+    expect(mock.responses.length).toBeGreaterThanOrEqual(0);
+  });
 });

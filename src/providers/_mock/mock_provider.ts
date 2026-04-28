@@ -24,12 +24,29 @@ import type { Provider, ProviderRequest, ProviderResponse } from "../provider.js
  */
 export class MockProvider implements Provider {
   public readonly name: string;
-  /** Queued responses. FIFO. Public for read-only inspection. */
-  public readonly responses: ProviderResponse[] = [];
+
+  // Private mutable backing arrays + public readonly getters: external code
+  // can read (`mock.responses[0]`, `mock.responses.length`) but cannot call
+  // `push` / `shift` / `length = 0` to bypass the documented mutation API
+  // (pushResponse / pushError / reset). A plain `readonly ProviderResponse[]`
+  // public field would block external mutations BUT also block the internal
+  // `this.responses.push(...)` calls; the getter pattern keeps both ergonomic.
+  private readonly _responses: ProviderResponse[] = [];
+  private readonly _errors: Error[] = [];
+  private readonly _requests: ProviderRequest[] = [];
+
+  /** Queued responses. FIFO. Read-only at the public surface. */
+  public get responses(): readonly ProviderResponse[] {
+    return this._responses;
+  }
   /** Queued errors. FIFO. Win over `responses` when both are non-empty. */
-  public readonly errors: Error[] = [];
+  public get errors(): readonly Error[] {
+    return this._errors;
+  }
   /** Captured incoming requests in arrival order. Useful for assertions. */
-  public readonly requests: ProviderRequest[] = [];
+  public get requests(): readonly ProviderRequest[] {
+    return this._requests;
+  }
 
   /**
    * Construct a mock that pretends to be the given provider. Defaults to
@@ -42,36 +59,31 @@ export class MockProvider implements Provider {
 
   /** Append a response to the queue. */
   public pushResponse(response: ProviderResponse): void {
-    this.responses.push(response);
+    this._responses.push(response);
   }
 
   /** Append an error to the queue. Errors win over responses when both are queued. */
   public pushError(error: Error): void {
-    this.errors.push(error);
+    this._errors.push(error);
   }
 
   /** Clear every queue and the captured requests array. Call between tests. */
   public reset(): void {
-    this.responses.length = 0;
-    this.errors.length = 0;
-    this.requests.length = 0;
+    this._responses.length = 0;
+    this._errors.length = 0;
+    this._requests.length = 0;
   }
 
   public async request(req: ProviderRequest): Promise<ProviderResponse> {
-    this.requests.push(req);
-    if (this.errors.length > 0) {
-      const next = this.errors.shift();
-      // shift() returns undefined only when length was 0; checked above.
-      if (next === undefined) {
-        throw new ProviderError("MockProvider: error queue desync", this.name);
-      }
+    this._requests.push(req);
+    if (this._errors.length > 0) {
+      // biome-ignore lint/style/noNonNullAssertion: length check on previous line guarantees non-empty
+      const next = this._errors.shift()!;
       throw next;
     }
-    if (this.responses.length > 0) {
-      const next = this.responses.shift();
-      if (next === undefined) {
-        throw new ProviderError("MockProvider: response queue desync", this.name);
-      }
+    if (this._responses.length > 0) {
+      // biome-ignore lint/style/noNonNullAssertion: length check on previous line guarantees non-empty
+      const next = this._responses.shift()!;
       return next;
     }
     throw new ProviderError(

@@ -32,3 +32,14 @@ export function getProvider(name: ProviderName): Provider {
   }
   return p;
 }
+
+/**
+ * Remove a registered provider, restoring the "not registered" state for that
+ * name. Used primarily by tests to keep the module-scoped registry isolated
+ * between test runs (and between test files in the same Vitest worker). A
+ * call to `getProvider(name)` after `unregisterProvider(name)` throws the
+ * same "not registered" error a fresh process would.
+ */
+export function unregisterProvider(name: ProviderName): void {
+  _providers.delete(name);
+}
