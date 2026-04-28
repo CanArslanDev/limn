@@ -177,12 +177,17 @@ export class AnthropicProvider implements Provider {
       throw new AuthError("ANTHROPIC_API_KEY env var not set; cannot reach Anthropic.");
     }
 
-    // Defensive guard for direct adapter callers. See JSDoc above.
+    // Defensive guard for direct adapter callers. See JSDoc above. Marked
+    // `retryable: false` because this is a caller bug (wrong message shape),
+    // not a transient fault: re-issuing the same request will fail the same
+    // way. The retry strategy honors the flag and rethrows immediately.
     for (const m of req.messages) {
       if (m.role === "system") {
         throw new ProviderError(
           "Anthropic does not accept role 'system' in the messages array; pass it via ProviderRequest.system instead.",
           "anthropic",
+          undefined,
+          false,
         );
       }
     }
@@ -385,22 +390,27 @@ function mapSdkError(err: unknown, errs: SdkErrorClasses, timeoutMs: number): Er
   // Bare APIError catch-all. The Anthropic SDK declares status-specific
   // subclasses for 400 (BadRequestError), 404 (NotFoundError), 409
   // (ConflictError), and 422 (UnprocessableEntityError) that this branch
-  // intentionally swallows: today they all surface as a single ProviderError
-  // because batch 1.2 has no caller logic that would treat them differently.
-  // Batch 1.4 (retry policy) will need to distinguish these from transient
-  // 5xx faults - 4xx client errors are deterministic and should carry
-  // `retryable: false`, whereas the current ProviderError is treated as a
-  // retry candidate. See the "Batch 1.4" section of
-  // docs/superpowers/plans/2026-04-28-limn-phase-1-layer1-anthropic.md for
-  // the planned distinction. Until then, callers can still inspect
-  // `err.cause` on the returned ProviderError to find the underlying SDK
-  // class if they need to disambiguate.
+  // intentionally swallows: they all surface as a single ProviderError with
+  // `retryable: false` because 4xx client faults are deterministic; re-issuing
+  // the same request will fail the same way. Callers who need finer
+  // disambiguation can still inspect `err.cause` to find the underlying SDK
+  // class. Transient 5xx faults are handled above by the InternalServerError /
+  // APIConnectionError branch, which keeps the default `retryable: true`.
   if (err instanceof errs.APIError) {
-    return new ProviderError(`Anthropic API error: ${(err as Error).message}`, "anthropic", err);
+    return new ProviderError(
+      `Anthropic API error: ${(err as Error).message}`,
+      "anthropic",
+      err,
+      false,
+    );
   }
+  // Truly unexpected throws (not subclasses of APIError) are deterministic by
+  // assumption: the SDK invariant we relied on broke, and re-issuing the same
+  // call will hit the same broken assumption. Mark non-retryable.
   return new ProviderError(
     `Unexpected Anthropic error: ${err instanceof Error ? err.message : String(err)}`,
     "anthropic",
     err,
+    false,
   );
 }

@@ -1,12 +1,16 @@
 /**
  * Unit tests for the `HookDispatcher`. Covers the five lifecycle phases, the
- * "hook errors do not crash the call" contract, and the read-only context
- * shape passed to each phase.
+ * "hook errors do not crash the call" contract, the read-only context shape
+ * passed to each phase, and (since batch 1.3) the retry strategy integration:
+ * multi-attempt loops, `attempt` counter bumping, `onRetry` firing between
+ * attempts, and the injectable `sleepFn`.
  */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ProviderError, RateLimitError } from "../../src/errors/index.js";
+import { AuthError, ProviderError, RateLimitError } from "../../src/errors/index.js";
 import { type Hook, HookDispatcher, newTraceId } from "../../src/hooks/dispatcher.js";
+import { ExponentialBackoffStrategy, type RetryStrategy } from "../../src/hooks/retry_strategy.js";
+import { testConfig } from "../_helpers/test_config.js";
 
 const baseCtx = {
   traceId: "trc_test",
@@ -188,5 +192,273 @@ describe("HookDispatcher", () => {
     const id = newTraceId();
     expect(id.startsWith("trc_")).toBe(true);
     expect(id.length).toBeGreaterThan("trc_".length);
+  });
+
+  it("backward-compat: legacy `new HookDispatcher([hook])` array form still works", async () => {
+    const order: string[] = [];
+    const hook: Hook = {
+      name: "spy",
+      onCallStart: () => {
+        order.push("start");
+      },
+      onCallSuccess: () => {
+        order.push("success");
+      },
+    };
+    const dispatcher = new HookDispatcher([hook]);
+    await dispatcher.run(baseCtx, async () => okResult);
+    expect(order).toEqual(["start", "success"]);
+  });
+});
+
+describe("HookDispatcher retry integration", () => {
+  // Always-retry-once strategy: on attempt 1, sleep 10ms; on later attempts,
+  // give up. Lets tests assert the dispatcher loop drives exec exactly twice
+  // without depending on the per-error policy of ExponentialBackoffStrategy.
+  const retryOnce: RetryStrategy = {
+    decide: (attempt) => (attempt === 1 ? 10 : null),
+  };
+
+  function recordingSleep(): {
+    sleepFn: (ms: number) => Promise<void>;
+    delays: number[];
+  } {
+    const delays: number[] = [];
+    return {
+      delays,
+      sleepFn: async (ms) => {
+        delays.push(ms);
+      },
+    };
+  }
+
+  it("calls exec multiple times when the strategy returns a delay", async () => {
+    const { sleepFn, delays } = recordingSleep();
+    const dispatcher = new HookDispatcher({ retry: retryOnce, sleepFn });
+    let calls = 0;
+    const result = await dispatcher.run(baseCtx, async () => {
+      calls += 1;
+      if (calls === 1) {
+        throw new ProviderError("transient", "anthropic");
+      }
+      return okResult;
+    });
+    expect(calls).toBe(2);
+    expect(delays).toEqual([10]);
+    expect(result).toEqual(okResult);
+  });
+
+  it("bumps the attempt counter on HookContext between retries", async () => {
+    const { sleepFn } = recordingSleep();
+    const observed: number[] = [];
+    const hook: Hook = {
+      name: "spy",
+      onRetry: (ctx) => {
+        observed.push(ctx.attempt);
+      },
+    };
+    const dispatcher = new HookDispatcher({
+      hooks: [hook],
+      retry: retryOnce,
+      sleepFn,
+    });
+    let calls = 0;
+    await dispatcher.run(baseCtx, async () => {
+      calls += 1;
+      if (calls === 1) throw new ProviderError("transient", "anthropic");
+      return okResult;
+    });
+    // onRetry fires once between attempt 1 (failed) and attempt 2 (succeeded).
+    // The attempt counter on that context reflects the upcoming attempt (2).
+    expect(observed).toEqual([2]);
+  });
+
+  it("fires onRetry between attempts but not before attempt 1", async () => {
+    const { sleepFn } = recordingSleep();
+    const order: string[] = [];
+    const hook: Hook = {
+      name: "spy",
+      onCallStart: () => {
+        order.push("start");
+      },
+      onRetry: () => {
+        order.push("retry");
+      },
+      onCallSuccess: () => {
+        order.push("success");
+      },
+      onCallEnd: () => {
+        order.push("end");
+      },
+    };
+    const dispatcher = new HookDispatcher({
+      hooks: [hook],
+      retry: retryOnce,
+      sleepFn,
+    });
+    let calls = 0;
+    await dispatcher.run(baseCtx, async () => {
+      calls += 1;
+      if (calls === 1) throw new ProviderError("transient", "anthropic");
+      return okResult;
+    });
+    // onCallStart fires once for the entire call (not per-attempt). onRetry
+    // fires before each retry. onCallSuccess + onCallEnd close the lifecycle.
+    expect(order).toEqual(["start", "retry", "success", "end"]);
+  });
+
+  it("on final failure: onCallStart once, onCallError once, onCallEnd once", async () => {
+    const { sleepFn } = recordingSleep();
+    const counts = { start: 0, retry: 0, success: 0, error: 0, end: 0 };
+    const hook: Hook = {
+      name: "spy",
+      onCallStart: () => {
+        counts.start += 1;
+      },
+      onRetry: () => {
+        counts.retry += 1;
+      },
+      onCallSuccess: () => {
+        counts.success += 1;
+      },
+      onCallError: () => {
+        counts.error += 1;
+      },
+      onCallEnd: () => {
+        counts.end += 1;
+      },
+    };
+    const dispatcher = new HookDispatcher({
+      hooks: [hook],
+      retry: retryOnce,
+      sleepFn,
+    });
+    await expect(
+      dispatcher.run(baseCtx, async () => {
+        throw new ProviderError("always boom", "anthropic");
+      }),
+    ).rejects.toBeInstanceOf(ProviderError);
+    // retryOnce gives up on attempt 2; so exec is called twice and onRetry
+    // fires once. Lifecycle hooks each fire exactly once at the bookends.
+    expect(counts).toEqual({ start: 1, retry: 1, success: 0, error: 1, end: 1 });
+  });
+
+  it("on success after retry: onCallStart once, onCallSuccess once, onCallEnd once, onRetry attempts-1 times", async () => {
+    const { sleepFn } = recordingSleep();
+    const counts = { start: 0, retry: 0, success: 0, error: 0, end: 0 };
+    const hook: Hook = {
+      name: "spy",
+      onCallStart: () => {
+        counts.start += 1;
+      },
+      onRetry: () => {
+        counts.retry += 1;
+      },
+      onCallSuccess: () => {
+        counts.success += 1;
+      },
+      onCallError: () => {
+        counts.error += 1;
+      },
+      onCallEnd: () => {
+        counts.end += 1;
+      },
+    };
+    const dispatcher = new HookDispatcher({
+      hooks: [hook],
+      retry: retryOnce,
+      sleepFn,
+    });
+    let calls = 0;
+    await dispatcher.run(baseCtx, async () => {
+      calls += 1;
+      if (calls === 1) throw new ProviderError("transient", "anthropic");
+      return okResult;
+    });
+    expect(counts).toEqual({ start: 1, retry: 1, success: 1, error: 0, end: 1 });
+  });
+
+  it("rethrows immediately and does not sleep when the strategy returns null on attempt 1", async () => {
+    const { sleepFn, delays } = recordingSleep();
+    const dispatcher = new HookDispatcher({
+      retry: new ExponentialBackoffStrategy({ config: testConfig().retry }),
+      sleepFn,
+    });
+    const auth = new AuthError("bad key");
+    await expect(
+      dispatcher.run(baseCtx, async () => {
+        throw auth;
+      }),
+    ).rejects.toBe(auth);
+    expect(delays).toEqual([]);
+  });
+
+  it("invokes the injected sleepFn with the strategy's delay", async () => {
+    const { sleepFn, delays } = recordingSleep();
+    // Custom strategy that returns predictable delays per attempt.
+    const stepped: RetryStrategy = {
+      decide: (attempt) => (attempt === 1 ? 100 : attempt === 2 ? 200 : null),
+    };
+    const dispatcher = new HookDispatcher({ retry: stepped, sleepFn });
+    let calls = 0;
+    await expect(
+      dispatcher.run(baseCtx, async () => {
+        calls += 1;
+        throw new ProviderError("nope", "anthropic");
+      }),
+    ).rejects.toBeInstanceOf(ProviderError);
+    expect(calls).toBe(3);
+    expect(delays).toEqual([100, 200]);
+  });
+
+  it("preserves the original throw on rethrow (not the LimnError wrapper) after retries", async () => {
+    const { sleepFn } = recordingSleep();
+    const dispatcher = new HookDispatcher({ retry: retryOnce, sleepFn });
+    const original = new ProviderError("boom", "anthropic");
+    await expect(
+      dispatcher.run(baseCtx, async () => {
+        throw original;
+      }),
+    ).rejects.toBe(original);
+  });
+
+  it("bumps ctx.attempt visible to onCallSuccess when the success arrives mid-loop", async () => {
+    const { sleepFn } = recordingSleep();
+    let observedSuccessAttempt = 0;
+    const hook: Hook = {
+      name: "spy",
+      onCallSuccess: (ctx) => {
+        observedSuccessAttempt = ctx.attempt;
+      },
+    };
+    const dispatcher = new HookDispatcher({
+      hooks: [hook],
+      retry: retryOnce,
+      sleepFn,
+    });
+    let calls = 0;
+    await dispatcher.run(baseCtx, async () => {
+      calls += 1;
+      if (calls === 1) throw new RateLimitError("slow", 10);
+      return okResult;
+    });
+    expect(observedSuccessAttempt).toBe(2);
+  });
+
+  it("uses real setTimeout-backed sleep when no sleepFn is supplied (smoke; tiny delay)", async () => {
+    const tinyDelayStrategy: RetryStrategy = {
+      decide: (attempt) => (attempt === 1 ? 1 : null),
+    };
+    const dispatcher = new HookDispatcher({ retry: tinyDelayStrategy });
+    let calls = 0;
+    const start = Date.now();
+    const result = await dispatcher.run(baseCtx, async () => {
+      calls += 1;
+      if (calls === 1) throw new ProviderError("transient", "anthropic");
+      return okResult;
+    });
+    expect(calls).toBe(2);
+    expect(result).toEqual(okResult);
+    expect(Date.now() - start).toBeGreaterThanOrEqual(0); // >=0 (low-tolerance smoke)
   });
 });

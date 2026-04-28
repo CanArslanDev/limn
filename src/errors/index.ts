@@ -46,6 +46,13 @@ export class RateLimitError extends LimnError {
  * Generic provider failure (5xx, malformed response, transport error). Carries
  * the provider name and the underlying error so callers can branch on which
  * SDK exploded.
+ *
+ * `retryable` distinguishes transient faults (5xx, transport blips - the
+ * default) from deterministic ones (4xx client errors, caller bugs). The
+ * default is `true` because the original use case for `ProviderError` was
+ * the 5xx / transport path; adapters that classify a fault as deterministic
+ * pass `retryable: false` explicitly. The retry strategy reads this flag to
+ * decide whether to back off or rethrow immediately.
  */
 export class ProviderError extends LimnError {
   public readonly code = "PROVIDER_ERROR" as const;
@@ -54,6 +61,7 @@ export class ProviderError extends LimnError {
     message: string,
     public readonly provider: string,
     cause?: unknown,
+    public readonly retryable: boolean = true,
   ) {
     super(message, cause);
   }

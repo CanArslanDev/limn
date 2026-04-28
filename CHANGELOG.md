@@ -35,6 +35,18 @@ All notable changes to this project are documented here. Format follows
 - GitHub Actions bumped to versions supporting Node 24 (`actions/checkout@v6`,
   `actions/setup-node@v6`, `pnpm/action-setup@v5`, `codecov/codecov-action@v5`)
   ahead of the 2026-06-02 default-runtime flip.
+- Retry policy: every Layer 1 call now flows through an
+  `ExponentialBackoffStrategy` consulted between attempts by the
+  `HookDispatcher`. `AuthError` never retries; `RateLimitError` honors
+  `retryAfterMs` when present and otherwise applies full-jitter exponential
+  backoff capped at 30s; retryable `ProviderError` (5xx, transport) backs off
+  up to `retry.maxAttempts`; `ModelTimeoutError` retries up to
+  `floor(maxAttempts/2)` total attempts. The new `onRetry` lifecycle phase
+  fires between attempts (it was declared in batch 1.1 but never invoked
+  until this batch). The `HookDispatcher` constructor accepts a
+  `HookDispatcherOptions` object (`hooks`, `retry`, `sleepFn`) while still
+  supporting the legacy `readonly Hook[]` form for backward compatibility;
+  `sleepFn` is the test-injection seam for sleep recording.
 
 ### Changed
 
@@ -46,13 +58,18 @@ All notable changes to this project are documented here. Format follows
   exercised against the real class hierarchy. Fixture files live in
   `test/fixtures/anthropic/` and document the mapping from status code
   to `LimnError` variant. The SDK's built-in `maxRetries` is now set to
-  `0` from the adapter so retry policy stays under Limn's control
-  (deferred to batch 1.4).
+  `0` from the adapter so retry policy stays under Limn's control.
 - Anthropic adapter cached SDK state collapsed into a single atomic field;
   SDK-boundary cast narrowed to a structural method shape (no `any` left
   in the adapter); `AnthropicProvider` + `AnthropicProviderOptions` now
   re-exported from the package root. Fake-fetch test helper extracted to
   `test/_helpers/fake_fetch.ts` for reuse by the OpenAI adapter (batch 1.6).
+- `ProviderError` now carries a `retryable` boolean (default `true`). The
+  Anthropic adapter sets `retryable: false` for the bare-`APIError`
+  fallthrough (4xx client faults), the `Unexpected Anthropic error` catch-all,
+  and the defensive `role: "system"` guard, so the new retry strategy
+  rethrows immediately on deterministic failures instead of burning attempts
+  on requests that will fail the same way.
 
 ### Notes
 

@@ -10,6 +10,7 @@ import { agent } from "../agent/agent.js";
 import type { ChatMessage as ProviderChatMessage } from "../client/options.js";
 import { DEFAULT_CONFIG } from "../config/limn_config.js";
 import { HookDispatcher, newTraceId } from "../hooks/dispatcher.js";
+import { ExponentialBackoffStrategy } from "../hooks/retry_strategy.js";
 import type { ProviderRequest } from "../providers/provider.js";
 import { getProvider, providerFor } from "../providers/registry.js";
 import type {
@@ -36,6 +37,36 @@ export interface Ai {
 const notImplemented = (fn: string): never => {
   throw new Error(`ai.${fn} is not implemented yet (Phase 1).`);
 };
+
+/**
+ * Factory that builds the dispatcher used by every public `ai.*` call. The
+ * default wires the production retry strategy (exponential backoff against
+ * `DEFAULT_CONFIG.retry`); tests replace it via
+ * {@link __setDispatcherFactoryForTests} to inject a recording `sleepFn` or a
+ * custom strategy. Module-scoped because the surface is one-line and the
+ * `ai` namespace is the only consumer.
+ *
+ * Once batch 1.4 ships the trace + redaction hooks they will be added to
+ * the default factory's hook list. Until then, the factory carries only
+ * the retry strategy.
+ */
+type DispatcherFactory = () => HookDispatcher;
+
+const defaultDispatcherFactory: DispatcherFactory = () =>
+  new HookDispatcher({
+    retry: new ExponentialBackoffStrategy({ config: DEFAULT_CONFIG.retry }),
+  });
+
+let currentDispatcherFactory: DispatcherFactory = defaultDispatcherFactory;
+
+/**
+ * Test-only seam for replacing the dispatcher factory. Pass `undefined` to
+ * restore the default. The leading underscores mark the export as not part
+ * of the stable public API; production code never imports this.
+ */
+export function __setDispatcherFactoryForTests(factory: DispatcherFactory | undefined): void {
+  currentDispatcherFactory = factory ?? defaultDispatcherFactory;
+}
 
 /**
  * Normalize the two-arg overload (`ai.ask(prompt, context, options)`) and the
@@ -94,7 +125,7 @@ export const ai: Ai = {
       ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
     };
 
-    const dispatcher = new HookDispatcher();
+    const dispatcher = currentDispatcherFactory();
     const result = await dispatcher.run(
       {
         traceId: newTraceId(),

@@ -19,6 +19,7 @@
 import type { ChatMessage } from "../client/options.js";
 import { LimnError, ProviderError } from "../errors/index.js";
 import type { ModelName } from "../providers/model_name.js";
+import { NO_RETRY, type RetryStrategy } from "./retry_strategy.js";
 
 /**
  * Read-only state delivered to every hook phase. The dispatcher mints a fresh
@@ -71,7 +72,7 @@ export interface Hook {
   onCallEnd?(ctx: HookContext): void | Promise<void>;
 }
 
-type Phase = "onCallStart" | "onCallSuccess" | "onCallError" | "onCallEnd";
+type Phase = "onCallStart" | "onCallSuccess" | "onCallError" | "onRetry" | "onCallEnd";
 
 /**
  * The shape the dispatcher's `exec` must return. Mirrors the relevant slice
@@ -97,30 +98,96 @@ export function newTraceId(): string {
 }
 
 /**
- * Coordinates the five lifecycle phases around a single provider call.
+ * Default sleep implementation used when the dispatcher's `sleepFn` option is
+ * omitted. `setTimeout` lives behind a Promise so the retry loop reads as
+ * straight-line `await`. Tests inject a recording sleep that resolves
+ * synchronously; production gets the real wall-clock pause.
+ */
+function defaultSleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Construction options for {@link HookDispatcher}. Options-object form so
+ * later batches (trace pipeline, agent loop) can extend the surface without
+ * breaking call sites.
  *
- * For batch 1.1 the dispatcher executes exactly one attempt: retry strategy
- * lands in batch 1.3 and will drive multiple attempts via the same `exec`
- * callback. The phase contract documented on `Hook` is honored regardless
- * of attempt count.
+ * Backward compatibility: passing a plain `readonly Hook[]` to the
+ * constructor is still supported (legacy batch 1.1 call sites used the array
+ * form). New call sites prefer the options object.
+ */
+export interface HookDispatcherOptions {
+  /** Hooks to fire on each lifecycle phase. Defaults to none. */
+  readonly hooks?: readonly Hook[];
+  /**
+   * Retry strategy consulted between attempts. Defaults to {@link NO_RETRY}
+   * so the legacy "exec runs exactly once" behavior is preserved when no
+   * strategy is supplied.
+   */
+  readonly retry?: RetryStrategy;
+  /**
+   * Sleep implementation invoked between attempts. Tests inject a recording
+   * sleep that resolves synchronously and captures the requested delay so
+   * assertions can verify the strategy's decision. Production omits this and
+   * the dispatcher uses a `setTimeout`-backed sleep.
+   */
+  readonly sleepFn?: (ms: number) => Promise<void>;
+}
+
+/**
+ * Coordinates the five lifecycle phases around a single provider call,
+ * including the retry loop driven by the configured {@link RetryStrategy}.
  *
- * Hook callbacks that throw are caught and logged via `console.warn`; the
- * dispatcher then continues to the next hook for the same phase. Throwing a
- * critical hook (trace, retry) therefore degrades observability but keeps
+ * Lifecycle on success after N attempts (N - 1 retries):
+ *   onCallStart -> exec(1) -> [throw -> onRetry -> sleep -> exec(2) -> ...]
+ *   -> onCallSuccess -> onCallEnd
+ *
+ * Lifecycle on terminal failure:
+ *   onCallStart -> exec(1) -> [...] -> onCallError -> onCallEnd
+ *
+ * `onCallStart` and `onCallEnd` fire exactly once each, at the bookends.
+ * `onRetry` fires once before each retry attempt (so for N attempts, N - 1
+ * times). Hook callbacks that throw are caught and logged via `console.warn`;
+ * the dispatcher then continues to the next hook for the same phase. A
+ * buggy hook (trace, telemetry) therefore degrades observability but keeps
  * the user-visible call alive.
  */
 export class HookDispatcher {
   private readonly hooks: readonly Hook[];
+  private readonly retry: RetryStrategy;
+  private readonly sleepFn: (ms: number) => Promise<void>;
 
-  public constructor(hooks: readonly Hook[] = []) {
-    this.hooks = hooks;
+  /**
+   * Construct a dispatcher. Accepts either a {@link HookDispatcherOptions}
+   * object (preferred) or a plain `readonly Hook[]` (legacy form, kept for
+   * backward compatibility with batch 1.1 call sites). When an array is
+   * passed the dispatcher uses {@link NO_RETRY} and the default sleep.
+   */
+  public constructor(options: HookDispatcherOptions | readonly Hook[] = {}) {
+    // `Array.isArray` does not narrow the union's non-array branch back to
+    // `HookDispatcherOptions` cleanly (TS keeps the original union). Cast the
+    // non-array branch through the explicit shape so the field assignments
+    // below see plain `HookDispatcherOptions`.
+    const opts: HookDispatcherOptions = Array.isArray(options)
+      ? { hooks: options as readonly Hook[] }
+      : (options as HookDispatcherOptions);
+    this.hooks = opts.hooks ?? [];
+    this.retry = opts.retry ?? NO_RETRY;
+    this.sleepFn = opts.sleepFn ?? defaultSleep;
   }
 
   /**
-   * Run `exec` wrapped in the lifecycle phases. The `initialCtx` carries the
-   * fields known before the first attempt (trace ID, resolved model, frozen
-   * messages); the dispatcher stamps the attempt counter and, after the
-   * attempt, the response / error.
+   * Run `exec` inside the retry loop, wrapped in the lifecycle phases. The
+   * `initialCtx` carries the fields known before the first attempt (trace ID,
+   * resolved model, frozen messages); the dispatcher stamps the attempt
+   * counter, fires `onRetry` between attempts, and populates `response` /
+   * `error` on the context after each attempt for the relevant phase.
+   *
+   * `onCallStart` fires once before the first attempt; `onCallEnd` fires once
+   * after the final outcome (success or terminal failure). The retry strategy
+   * decides whether each thrown error is retried or surfaced; on retry the
+   * dispatcher sleeps for the strategy's returned delay and increments the
+   * attempt counter before invoking `exec` again.
    */
   public async run<T extends DispatcherResult>(
     initialCtx: Omit<HookContext, "attempt" | "response" | "error">,
@@ -128,23 +195,38 @@ export class HookDispatcher {
   ): Promise<T> {
     let ctx: HookContext = { ...initialCtx, attempt: 1 };
     await this.fire("onCallStart", ctx);
+    let attempt = 0;
     try {
-      const result = await exec(1);
-      ctx = {
-        ...ctx,
-        response: {
-          content: result.content,
-          inputTokens: result.inputTokens,
-          outputTokens: result.outputTokens,
-        },
-      };
-      await this.fire("onCallSuccess", ctx);
-      return result;
-    } catch (err) {
-      const wrapped = this.toLimnError(err);
-      ctx = { ...ctx, error: wrapped };
-      await this.fire("onCallError", ctx);
-      throw err;
+      while (true) {
+        attempt += 1;
+        ctx = { ...ctx, attempt };
+        if (attempt > 1) {
+          await this.fire("onRetry", ctx);
+        }
+        try {
+          const result = await exec(attempt);
+          ctx = {
+            ...ctx,
+            response: {
+              content: result.content,
+              inputTokens: result.inputTokens,
+              outputTokens: result.outputTokens,
+            },
+          };
+          await this.fire("onCallSuccess", ctx);
+          return result;
+        } catch (err) {
+          const wrapped = this.toLimnError(err);
+          const delayMs = this.retry.decide(attempt, wrapped);
+          if (delayMs === null) {
+            ctx = { ...ctx, error: wrapped };
+            await this.fire("onCallError", ctx);
+            throw err;
+          }
+          ctx = { ...ctx, error: wrapped };
+          await this.sleepFn(delayMs);
+        }
+      }
     } finally {
       await this.fire("onCallEnd", ctx);
     }

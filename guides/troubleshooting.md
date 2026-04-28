@@ -34,11 +34,11 @@ The provider returned 429 or signaled exhaustion via headers. Carries `retryAfte
 
 ## `ProviderError`
 
-A 5xx, a transport error, or an unparseable response from the provider.
+A 5xx, a transport error, an unparseable response, or a deterministic 4xx client fault from the provider.
 
 - Carries the provider name (`anthropic` / `openai`) and the underlying SDK error in `cause`.
-- The default retry policy retries 5xx with exponential backoff; transport errors are typically transient.
-- Recovery: automatic retry; surface to the user on exhaustion.
+- Carries a `retryable` boolean. Transient faults (5xx, transport blips) default to `retryable: true` and the retry strategy backs off exponentially. Deterministic faults (4xx client errors, caller bugs such as passing `role: "system"` to Anthropic via the messages array) carry `retryable: false`; the retry strategy gives up immediately because re-issuing the same request will fail the same way.
+- Recovery: automatic retry on transient faults; surface deterministic faults to the user with the underlying `cause` for debugging.
 
 ## `ModelTimeoutError`
 
