@@ -48,6 +48,11 @@ All notable changes to this project are documented here. Format follows
   to `LimnError` variant. The SDK's built-in `maxRetries` is now set to
   `0` from the adapter so retry policy stays under Limn's control
   (deferred to batch 1.4).
+- Anthropic adapter cached SDK state collapsed into a single atomic field;
+  SDK-boundary cast narrowed to a structural method shape (no `any` left
+  in the adapter); `AnthropicProvider` + `AnthropicProviderOptions` now
+  re-exported from the package root. Fake-fetch test helper extracted to
+  `test/_helpers/fake_fetch.ts` for reuse by the OpenAI adapter (batch 1.6).
 
 ### Notes
 

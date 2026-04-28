@@ -22,11 +22,15 @@
  * forwards to the SDK's documented `fetch` constructor option, primarily
  * used by tests to replay JSON fixtures from `test/fixtures/anthropic/`.
  *
- * Provider boundary note: this file is the documented `any`-tolerant boundary
+ * Provider boundary note: this file is the documented SDK-boundary cast site
  * for the Anthropic SDK. The SDK's `messages.create()` overloads return a
  * stream-or-message union that TypeScript narrows poorly through dynamic
- * import, so we cast the result once on entry and immediately re-validate the
- * fields we use. Everywhere outside this file remains `unknown`/sealed.
+ * import, so we cast the cached client to the precise structural shape of the
+ * one method we call and re-narrow the response with `SdkMessageResponse`
+ * immediately. The cast stays a tight, named structural type rather than
+ * `any` so a future SDK signature change surfaces as a type error here
+ * instead of silently propagating. Everywhere outside this file remains
+ * `unknown`/sealed.
  */
 
 import { AuthError, ModelTimeoutError, ProviderError, RateLimitError } from "../../errors/index.js";
@@ -113,16 +117,26 @@ function readApiKeyFromEnv(): string | undefined {
   return process.env["ANTHROPIC_API_KEY"];
 }
 
+/**
+ * Cached SDK state: the constructed client plus the error-class table. Both
+ * are populated together by `ensureClient()` and assigned as one atomic field
+ * write so a concurrent caller sees either "nothing cached" (and waits its
+ * turn) or "fully cached" (and proceeds). Splitting them into two independent
+ * mutable fields would invite a "client cached but errors not yet" window
+ * during interleaved `request()` calls.
+ */
+interface CachedSdkState {
+  readonly client: unknown;
+  readonly errors: SdkErrorClasses;
+}
+
 export class AnthropicProvider implements Provider {
   public readonly name = "anthropic" as const;
 
-  // Lazy-cached SDK client. First request() call constructs it; subsequent
-  // calls reuse. Typed as `unknown` because the SDK type is dynamic-imported;
-  // the cast at the call site is the documented adapter-boundary `any`.
-  private client: unknown;
-  // Cached error-class table from the SDK module. Populated alongside `client`
-  // so the catch site can `instanceof`-check without re-importing.
-  private errors: SdkErrorClasses | undefined;
+  // Lazy-cached SDK state. First request() call populates it; subsequent
+  // calls reuse. The two halves (client + error-class table) live in one
+  // object so they are observed together; see CachedSdkState's JSDoc.
+  private state: CachedSdkState | undefined;
 
   private readonly apiKey: string | undefined;
   private readonly fetchOverride: typeof globalThis.fetch | undefined;
@@ -173,14 +187,8 @@ export class AnthropicProvider implements Provider {
       }
     }
 
-    await this.ensureClient();
-    // ensureClient guarantees both fields are populated; assert for the type
-    // narrower (TypeScript cannot follow the side-effect through `await`).
-    if (this.client === undefined || this.errors === undefined) {
-      // Should never happen; ensureClient throws on failure.
-      throw new ProviderError("AnthropicProvider failed to initialize SDK client.", "anthropic");
-    }
-    const errs = this.errors;
+    const state = await this.ensureState();
+    const { errors: errs } = state;
 
     const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     const ac = new AbortController();
@@ -197,15 +205,19 @@ export class AnthropicProvider implements Provider {
     };
 
     try {
-      // The single allowed `as any` on the SDK boundary. The SDK's overloaded
-      // `create()` typing routes through a stream/non-stream union that does
-      // not narrow cleanly through `unknown`; the call returns SdkMessageResponse
-      // for non-streaming requests, which we re-narrow on use.
-      // biome-ignore lint/suspicious/noExplicitAny: documented adapter boundary
-      const sdkClient = this.client as any;
-      const sdkResponse = (await sdkClient.messages.create(sdkRequest, {
+      // SDK-boundary cast. The SDK's overloaded `create()` routes through a
+      // stream/non-stream union that does not narrow cleanly out of dynamic
+      // import. We cast the cached `unknown` client to the precise structural
+      // shape of the one method we use; the response is typed as
+      // SdkMessageResponse on the same line. No `any` escapes this site.
+      const sdkClient = state.client as {
+        readonly messages: {
+          create(req: unknown, opts: { signal: AbortSignal }): Promise<SdkMessageResponse>;
+        };
+      };
+      const sdkResponse = await sdkClient.messages.create(sdkRequest, {
         signal: ac.signal,
-      })) as SdkMessageResponse;
+      });
       return mapSdkResponse(sdkResponse);
     } catch (err) {
       throw mapSdkError(err, errs, timeoutMs);
@@ -226,13 +238,16 @@ export class AnthropicProvider implements Provider {
   }
 
   /**
-   * Lazy-import the SDK and cache both the client instance and the error
-   * class table. Splitting this out of `request()` keeps the request body
-   * focused on protocol translation; the import-failure path (peer dep not
-   * installed) gets one place to surface a friendly install hint.
+   * Lazy-import the SDK and cache the client instance + error-class table as
+   * a single atomic state object. Splitting this out of `request()` keeps the
+   * request body focused on protocol translation; the import-failure path
+   * (peer dep not installed) gets one place to surface a friendly install
+   * hint. The atomic field write at the end ensures concurrent callers
+   * either see no cached state (and re-enter ensureState) or fully cached
+   * state (and proceed) - never a partial mid-construction view.
    */
-  private async ensureClient(): Promise<void> {
-    if (this.client !== undefined && this.errors !== undefined) return;
+  private async ensureState(): Promise<CachedSdkState> {
+    if (this.state !== undefined) return this.state;
     let mod: {
       default: new (opts: {
         apiKey: string;
@@ -260,24 +275,32 @@ export class AnthropicProvider implements Provider {
     // double-retries and keep error mapping deterministic. The `fetch`
     // override is forwarded conditionally so production code (no override)
     // continues to use the SDK's bundled fetch resolution.
-    this.client = new Anthropic({
+    const client = new Anthropic({
       apiKey: this.apiKey,
       maxRetries: 0,
       ...(this.fetchOverride === undefined ? {} : { fetch: this.fetchOverride }),
     });
     // The SDK exposes the error classes as static properties on the default
-    // export. We extract them once and store the table so the catch site
-    // does a plain `instanceof` against cached references.
-    this.errors = {
-      APIError: mod.APIError,
-      AuthenticationError: mod.AuthenticationError,
-      PermissionDeniedError: mod.PermissionDeniedError,
-      RateLimitError: mod.RateLimitError,
-      InternalServerError: mod.InternalServerError,
-      APIConnectionError: mod.APIConnectionError,
-      APIConnectionTimeoutError: mod.APIConnectionTimeoutError,
-      APIUserAbortError: mod.APIUserAbortError,
+    // export. We extract them once and store them in the same state object
+    // as the client so the catch site does a plain `instanceof` against
+    // cached references.
+    const next: CachedSdkState = {
+      client,
+      errors: {
+        APIError: mod.APIError,
+        AuthenticationError: mod.AuthenticationError,
+        PermissionDeniedError: mod.PermissionDeniedError,
+        RateLimitError: mod.RateLimitError,
+        InternalServerError: mod.InternalServerError,
+        APIConnectionError: mod.APIConnectionError,
+        APIConnectionTimeoutError: mod.APIConnectionTimeoutError,
+        APIUserAbortError: mod.APIUserAbortError,
+      },
     };
+    // Single atomic field write: concurrent callers either see undefined
+    // (and re-enter, which is idempotent) or this fully populated object.
+    this.state = next;
+    return next;
   }
 }
 
@@ -359,6 +382,19 @@ function mapSdkError(err: unknown, errs: SdkErrorClasses, timeoutMs: number): Er
       err,
     );
   }
+  // Bare APIError catch-all. The Anthropic SDK declares status-specific
+  // subclasses for 400 (BadRequestError), 404 (NotFoundError), 409
+  // (ConflictError), and 422 (UnprocessableEntityError) that this branch
+  // intentionally swallows: today they all surface as a single ProviderError
+  // because batch 1.2 has no caller logic that would treat them differently.
+  // Batch 1.4 (retry policy) will need to distinguish these from transient
+  // 5xx faults - 4xx client errors are deterministic and should carry
+  // `retryable: false`, whereas the current ProviderError is treated as a
+  // retry candidate. See the "Batch 1.4" section of
+  // docs/superpowers/plans/2026-04-28-limn-phase-1-layer1-anthropic.md for
+  // the planned distinction. Until then, callers can still inspect
+  // `err.cause` on the returned ProviderError to find the underlying SDK
+  // class if they need to disambiguate.
   if (err instanceof errs.APIError) {
     return new ProviderError(`Anthropic API error: ${(err as Error).message}`, "anthropic", err);
   }

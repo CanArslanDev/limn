@@ -16,7 +16,8 @@ function readKey(): string | undefined {
   // biome-ignore lint/complexity/useLiteralKeys: process.env requires bracket notation under TS noPropertyAccessFromIndexSignature
   return process.env["ANTHROPIC_API_KEY"];
 }
-const HAS_KEY = readKey() !== undefined && readKey() !== "";
+const KEY = readKey();
+const HAS_KEY = KEY !== undefined && KEY !== "";
 
 describe.skipIf(!HAS_KEY)("AnthropicProvider live", () => {
   it("returns non-empty text for a trivial prompt against claude-haiku-4-5", async () => {

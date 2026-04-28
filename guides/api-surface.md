@@ -88,6 +88,14 @@ Every typed failure derives from `LimnError`. See [Troubleshooting](troubleshoot
 
 Most users never touch the provider classes directly: `ai.ask` resolves a model name to a provider via the registry, and the registry lazy-bootstraps the right adapter from the relevant `<VENDOR>_API_KEY` env var. Power users who need to register a provider explicitly (custom keys, alternate baseURLs, test seams) can construct the adapter themselves.
 
+`AnthropicProvider` and `AnthropicProviderOptions` ship from the package root so direct construction stays a one-line import:
+
+```ts
+import { AnthropicProvider, type AnthropicProviderOptions } from "limn";
+
+const provider = new AnthropicProvider({ apiKey: mySecretManagerLookup() });
+```
+
 `AnthropicProviderOptions` carries two fields today:
 
 - `apiKey?: string | undefined` - explicit API key. Omit the field entirely to fall back to `process.env.ANTHROPIC_API_KEY`. Pass the field with `undefined` explicitly to bypass the env-var read (useful when test code wants to assert the missing-key path on a developer machine that has the var set).

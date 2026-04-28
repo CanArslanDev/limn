@@ -28,6 +28,11 @@ export type { ModelName } from "./providers/model_name.js";
 export type { RegisteredTool, ToolDefinition } from "./agent/tool.js";
 
 export {
+  AnthropicProvider,
+  type AnthropicProviderOptions,
+} from "./providers/anthropic/anthropic_provider.js";
+
+export {
   AuthError,
   LimnError,
   ModelTimeoutError,
