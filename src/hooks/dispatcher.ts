@@ -19,7 +19,18 @@
 import type { ChatMessage } from "../client/options.js";
 import { LimnError, ProviderError } from "../errors/index.js";
 import type { ModelName } from "../providers/model_name.js";
+import { newTraceId as _newTraceId } from "../trace/trace_id.js";
 import { NO_RETRY, type RetryStrategy } from "./retry_strategy.js";
+
+/**
+ * Re-export of the canonical {@link newTraceId} helper. The source of truth
+ * lives at `src/trace/trace_id.ts` (CLAUDE.md §13.8 shared-helper-first
+ * principle); this re-export preserves the historical import path
+ * (`from "../hooks/dispatcher.js"`) so call sites established in batch 1.1
+ * (notably `src/client/ai.ts`) keep working without churn. New code should
+ * prefer the trace-layer import directly.
+ */
+export const newTraceId: typeof _newTraceId = _newTraceId;
 
 /**
  * Read-only state delivered to every hook phase. The dispatcher mints a fresh
@@ -83,18 +94,6 @@ export interface DispatcherResult {
   readonly content: string;
   readonly inputTokens: number;
   readonly outputTokens: number;
-}
-
-/**
- * Generates a `trc_<uuid>` trace ID. Uses `crypto.randomUUID` (Node 20.10+
- * has it on the global). Module-level export so callers (`ai.ask`,
- * future `ai.chat`) mint trace IDs without reaching through a static
- * method on the dispatcher class. When the trace pipeline lands (batch
- * 1.4) the helper moves to `src/trace/` per the shared-helper-first
- * principle; the existing import path becomes a re-export at that point.
- */
-export function newTraceId(): string {
-  return `trc_${crypto.randomUUID()}`;
 }
 
 /**

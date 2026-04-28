@@ -19,6 +19,23 @@ export interface TraceRecord {
   readonly request: unknown;
   readonly response: unknown;
   readonly error?: { readonly code: string; readonly message: string };
+  /**
+   * Total attempts the call took, 1-based. `1` for first-try success or
+   * non-retryable failure; `>1` when the retry strategy ran. The dispatcher's
+   * `attempt` counter at end-of-call feeds this directly.
+   */
+  readonly attempts: number;
+  /**
+   * Dot-paths inside `request`, `response`, or `error` whose strings had at
+   * least one substring replaced by `[REDACTED]`. Empty when nothing matched
+   * the redactor's patterns or `trace.redactKeys` is `false`.
+   */
+  readonly redactedFields: readonly string[];
+  /**
+   * Trace ID of the parent call when this record sits inside a larger
+   * operation (Phase 3 agent loops, tool dispatches). Absent for top-level
+   * Layer 1 calls.
+   */
   readonly parentTraceId?: string;
 }
 

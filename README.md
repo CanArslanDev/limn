@@ -143,7 +143,7 @@ import { defineConfig } from "limn";
 export default defineConfig({
   defaultModel: "claude-sonnet-4-6",
   retry: { maxAttempts: 3, backoff: "exponential" },
-  trace: { dir: ".limn/traces", enabled: true },
+  trace: { dir: ".limn/traces", enabled: true, redactKeys: true },
 });
 ```
 

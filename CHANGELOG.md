@@ -53,6 +53,26 @@ All notable changes to this project are documented here. Format follows
   and the defensive `role: "system"` guard, so the new retry strategy
   rethrows immediately on deterministic failures instead of burning attempts
   on requests that will fail the same way.
+- Trace pipeline: every `ai.ask` call now writes one JSON record to
+  `.limn/traces/<ulid>.json` via the new `FileSystemTraceSink`. Records
+  carry `id`, `timestamp`, `kind`, `model`, `provider`, `latencyMs`,
+  `attempts`, `usage`, `request`, `response`, optional `error`, and a
+  `redactedFields` array of dot-paths naming every field whose string
+  contents had an API-key substring scrubbed. ULID-named files sort
+  chronologically without an external index; writes are atomic via
+  `tempfile + rename` so partial reads are impossible.
+- Key redaction: a new `RedactionHook` runs ahead of the trace hook and
+  replaces `sk-ant-`, `sk-proj-`, and `sk-` substrings (with at least 16
+  trailing url-safe characters) with `[REDACTED]` in the persisted
+  request, response, and error message. Opt out via
+  `trace.redactKeys: false` in `limn.config.ts`. Default-on so a key
+  smuggled through a prompt or echoed by an SDK error is never persisted
+  in plain text.
+- `TraceHook` and `RedactionHook` ship as concrete `Hook` implementations
+  on top of the batch 1.1 dispatcher; they coordinate via a shared
+  per-call `TraceState` object built fresh by the dispatcher factory.
+  Sink failures are surfaced via `console.warn` and never crash the
+  user's call. Opt out of tracing entirely with `trace.enabled: false`.
 
 ### Changed
 

@@ -9,6 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { __setDispatcherFactoryForTests, ai } from "../../src/client/ai.js";
+import { HookDispatcher } from "../../src/hooks/dispatcher.js";
 import { MockProvider } from "../../src/providers/_mock/mock_provider.js";
 import { getProvider, registerProvider, unregisterProvider } from "../../src/providers/registry.js";
 
@@ -17,11 +18,11 @@ describe("ai.ask smoke (MockProvider)", () => {
   let previous: ReturnType<typeof getProvider> | undefined;
 
   beforeEach(() => {
-    // Defense against test-pollution: if another test file's afterEach
-    // failed to reset the dispatcher factory, this smoke would observe a
-    // recording dispatcher instead of the production default. Explicit
-    // reset here keeps the smoke an independent oracle.
-    __setDispatcherFactoryForTests(undefined);
+    // Inject a hook-less, retry-less dispatcher so the smoke exercises
+    // the public surface in isolation: no real trace files written, no
+    // retries on the queued response, no observability side effects. The
+    // dedicated trace integration smoke covers the production hook stack.
+    __setDispatcherFactoryForTests(() => new HookDispatcher());
     try {
       previous = getProvider("anthropic");
     } catch {
@@ -40,6 +41,7 @@ describe("ai.ask smoke (MockProvider)", () => {
       // leak into the next test file in this Vitest worker.
       unregisterProvider("anthropic");
     }
+    __setDispatcherFactoryForTests(undefined);
   });
 
   it("returns the queued mock response content", async () => {

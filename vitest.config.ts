@@ -25,7 +25,6 @@ export default defineConfig({
         "src/agent/agent.ts", // Phase 3
         "src/providers/provider.ts", // batch 1.1 (types only; covered via usage)
         "src/providers/openai/**", // batch 1.6
-        "src/trace/**", // batch 1.4
       ],
       // Phase 0 baseline. Bumped each batch in lockstep with the exclude
       // shrinkage above. Plan target by end of Phase 1: 80 / 75 / 80 / 80.

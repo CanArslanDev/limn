@@ -49,7 +49,34 @@ That's it. With zero configuration, Limn:
 - Picks a sensible default model (`claude-sonnet-4-6`).
 - Retries up to 3 times with exponential backoff on rate-limit and transient errors.
 - Times out at 60 seconds.
-- Writes a JSON trace record to `.limn/traces/<id>.json`.
+- Writes a JSON trace record to `.limn/traces/<ulid>.json` with API keys
+  redacted out of the persisted request, response, and error message.
+
+## Tracing
+
+Every Layer 1 call lands as one JSON file under `trace.dir` (default
+`.limn/traces/`). The file name is a ULID so directory listings sort
+chronologically; the JSON body carries the trace `id` (a stable
+`trc_<uuid>`), an ISO 8601 `timestamp`, the resolved `model`, `provider`,
+`latencyMs`, the final `attempts` count, token `usage`, the
+provider-agnostic `request` and `response`, an optional `error`, and a
+`redactedFields` array.
+
+Redaction is on by default. The hook scrubs `sk-ant-`, `sk-proj-`, and
+`sk-` substrings (at least 16 trailing url-safe characters) and replaces
+them with `[REDACTED]`. Each modified field surfaces in `redactedFields`
+as a dot-path locator (for example `request.messages.0.content`) so the
+inspector can show what was scrubbed without leaking the secret itself.
+
+Two opt-outs:
+
+- `trace.enabled: false` skips the trace pipeline entirely. Calls run
+  with retry only; no files are written.
+- `trace.redactKeys: false` keeps tracing on but persists raw payloads.
+  Not recommended; only useful when debugging the redactor itself.
+
+Trace files are local-only. Limn never sends them anywhere; the inspector
+(Phase 2) reads the same directory.
 
 ## Project configuration
 

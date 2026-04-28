@@ -56,7 +56,7 @@ const LAYER_RULES: readonly LayerRule[] = [
   { layer: "agent", mayImportFrom: ["agent", "providers/model_name", "errors"] },
   {
     layer: "hooks",
-    mayImportFrom: ["client/options", "providers/model_name", "config", "errors"],
+    mayImportFrom: ["client/options", "providers/model_name", "config", "errors", "trace"],
   },
   {
     layer: "client",

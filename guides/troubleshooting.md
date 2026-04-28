@@ -83,6 +83,24 @@ The same message variant exists for `OPENAI_API_KEY` once batch 1.6 lights up th
 
 Phase 2 issue. Until the diff renderer ships, `JSON.stringify(err.actualPayload, null, 2)` is the manual workaround.
 
+### Trace files do not appear under `.limn/traces/`
+
+The trace pipeline degrades observability rather than crashing the call.
+A failed write surfaces as `[limn] trace sink "..." failed to write: ...`
+on stderr; the call itself still returns the model output. Common causes:
+
+- The configured `trace.dir` is not writable by the process. Confirm
+  permissions on the directory (default `.limn/traces/`) or set a
+  different `trace.dir` in `limn.config.ts`.
+- Disk is full. The atomic-rename write requires room for the temp file
+  before the final rename.
+- Tracing is disabled. Check `trace.enabled` in `limn.config.ts`; the
+  default is `true`.
+
+Set `trace.enabled: false` in `limn.config.ts` if you want to opt out
+intentionally; suppressing the warning otherwise hides a real
+configuration problem.
+
 ## Still stuck?
 
 Open an issue with the bug-report template. Include the exact code, the model name, the trace JSON (redact responses if needed), and the full error message.
