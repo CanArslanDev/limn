@@ -21,6 +21,7 @@ Building LLM apps today means stitching three or four independent libraries toge
 - **Provider-agnostic core.** Anthropic and OpenAI on day one, abstracted behind one client. Pick a model name; Limn picks the right SDK.
 - **Typed errors with documented recovery paths.** `RateLimitError`, `SchemaValidationError`, `ToolExecutionError`, `ModelTimeoutError`, `AuthError`, `ProviderError`. No silent failures, no opaque stack traces.
 - **Streaming is first-class.** Every generation function has a streaming counterpart. Same API surface; no separate "streaming SDK".
+- **Image attachments built in.** Pass `attachments: [{ kind: "image", source: { type: "base64", data: buffer, mimeType } }]` (or a URL source) on any Layer 1 call. Limn handles base64 encoding inside the adapter; you supply raw `Buffer`s or URLs.
 - **Structured extraction.** `ai.extract(schema, input)` validates the model's response against a Zod schema and surfaces a side-by-side expected-vs-actual diff in the inspector if it fails.
 - **Tool use with end-to-end types.** `tool({ name, description, input, run })` gives the model an input schema and your callback a typed argument. Malformed tool input is caught, surfaced clearly, and (optionally) retried with corrective feedback.
 - **Local-first observability.** Every call writes a structured JSON record to `.limn/traces/` by default. No telemetry, no account, no network calls beyond the LLM provider.

@@ -240,6 +240,127 @@ describe("AnthropicProvider abort + timeout", () => {
   });
 });
 
+describe("AnthropicProvider attachments", () => {
+  // 1x1 transparent PNG. The exact bytes are not asserted; only that the
+  // adapter forwards `data.toString("base64")` over the wire.
+  const pngBuffer = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
+    "base64",
+  );
+
+  it("emits a base64 image block before the text on the first user message", async () => {
+    const { fetch, calls } = singleResponse({ fixture: "messages_with_image.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    await provider.request({
+      ...baseRequest,
+      attachments: [
+        { kind: "image", source: { type: "base64", data: pngBuffer, mimeType: "image/png" } },
+      ],
+    });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    const body = recorded.body as { messages: ReadonlyArray<{ role: string; content: unknown }> };
+    expect(body.messages).toHaveLength(1);
+    const first = body.messages[0];
+    if (first === undefined) throw new Error("expected one message");
+    expect(first.role).toBe("user");
+    expect(first.content).toEqual([
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: pngBuffer.toString("base64") },
+      },
+      { type: "text", text: "hi" },
+    ]);
+  });
+
+  it("emits a URL image block with the source-type 'url' shape", async () => {
+    const { fetch, calls } = singleResponse({ fixture: "messages_with_image.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    await provider.request({
+      ...baseRequest,
+      attachments: [{ kind: "image", source: { type: "url", url: "https://example.com/cat.jpg" } }],
+    });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    const body = recorded.body as { messages: ReadonlyArray<{ role: string; content: unknown }> };
+    const first = body.messages[0];
+    if (first === undefined) throw new Error("expected one message");
+    expect(first.content).toEqual([
+      { type: "image", source: { type: "url", url: "https://example.com/cat.jpg" } },
+      { type: "text", text: "hi" },
+    ]);
+  });
+
+  it("preserves attachment order (multiple images before the text)", async () => {
+    const { fetch, calls } = singleResponse({ fixture: "messages_with_image.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    await provider.request({
+      ...baseRequest,
+      attachments: [
+        { kind: "image", source: { type: "url", url: "https://example.com/a.jpg" } },
+        { kind: "image", source: { type: "base64", data: pngBuffer, mimeType: "image/jpeg" } },
+        { kind: "image", source: { type: "url", url: "https://example.com/c.gif" } },
+      ],
+    });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    const body = recorded.body as { messages: ReadonlyArray<{ role: string; content: unknown }> };
+    const first = body.messages[0];
+    if (first === undefined) throw new Error("expected one message");
+    const content = first.content as ReadonlyArray<{ type: string }>;
+    expect(content).toHaveLength(4);
+    expect(content[0]?.type).toBe("image");
+    expect(content[1]?.type).toBe("image");
+    expect(content[2]?.type).toBe("image");
+    expect(content[3]?.type).toBe("text");
+    // Spot-check the second image (base64 with image/jpeg media_type).
+    expect(content[1]).toEqual({
+      type: "image",
+      source: { type: "base64", media_type: "image/jpeg", data: pngBuffer.toString("base64") },
+    });
+  });
+
+  it("keeps content as a string when no attachments are supplied", async () => {
+    const { fetch, calls } = singleResponse({ fixture: "messages_success.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    await provider.request(baseRequest);
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    const body = recorded.body as { messages: ReadonlyArray<{ role: string; content: unknown }> };
+    const first = body.messages[0];
+    if (first === undefined) throw new Error("expected one message");
+    // Back-compat: the existing behavior (content: string) must hold when
+    // attachments are absent, so prior fixture-based assertions stay valid.
+    expect(first.content).toBe("hi");
+  });
+
+  it("attaches images only to the first user message in a multi-message request", async () => {
+    const { fetch, calls } = singleResponse({ fixture: "messages_with_image.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    await provider.request({
+      model: "claude-sonnet-4-6",
+      messages: [
+        { role: "user", content: "first" },
+        { role: "assistant", content: "ack" },
+        { role: "user", content: "second" },
+      ],
+      attachments: [{ kind: "image", source: { type: "url", url: "https://example.com/a.jpg" } }],
+    });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    const body = recorded.body as { messages: ReadonlyArray<{ role: string; content: unknown }> };
+    expect(body.messages).toHaveLength(3);
+    // First user message: content is an array with the image and the text.
+    expect(body.messages[0]?.content).toEqual([
+      { type: "image", source: { type: "url", url: "https://example.com/a.jpg" } },
+      { type: "text", text: "first" },
+    ]);
+    // Subsequent messages unchanged: plain string content.
+    expect(body.messages[1]?.content).toBe("ack");
+    expect(body.messages[2]?.content).toBe("second");
+  });
+});
+
 describe("AnthropicProvider stream", () => {
   it("throws ProviderError noting batch 1.7", () => {
     const provider = new AnthropicProvider({ apiKey: "test-key" });

@@ -17,10 +17,14 @@ export { defineConfig } from "./config/define_config.js";
 
 export type {
   AskOptions,
+  Attachment,
   ChatOptions,
   ChatMessage,
   ExtractOptions,
+  ImageAttachment,
+  ImageSource,
   StreamOptions,
+  SupportedImageMimeType,
 } from "./client/options.js";
 
 export type { LimnConfig } from "./config/limn_config.js";

@@ -195,6 +195,7 @@ export const ai: Ai = {
       ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
       ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
       ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
     };
 
     const traceId = newTraceId();

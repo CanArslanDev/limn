@@ -19,6 +19,35 @@ Two overloads:
 - `ai.ask(prompt, options?)` -> the prompt is the entire input.
 - `ai.ask(prompt, context, options?)` -> `prompt` is the instruction, `context` is the thing to act on. Limn composes them in a sensible order for the chosen model.
 
+#### Image attachments
+
+Every Layer 1 call accepts `attachments: readonly Attachment[]` to send images alongside the prompt. Limn handles base64 encoding inside the adapter; you supply raw `Buffer`s or URLs and never encode anything by hand.
+
+```ts
+import { ai } from "limn";
+import { readFile } from "node:fs/promises";
+
+const png = await readFile("photo.png");
+
+const description = await ai.ask("Describe this image:", {
+  attachments: [
+    { kind: "image", source: { type: "base64", data: png, mimeType: "image/png" } },
+  ],
+});
+```
+
+URL form for a remote image the provider can fetch itself:
+
+```ts
+const caption = await ai.ask("Caption this:", {
+  attachments: [
+    { kind: "image", source: { type: "url", url: "https://example.com/cat.jpg" } },
+  ],
+});
+```
+
+The `Attachment` union is sealed by the `kind` discriminator so future file and document variants land without breaking changes. Today only `kind: "image"` is supported. `ImageSource` is sealed by its own `type` discriminator (`base64` or `url`); `mimeType` on the base64 variant accepts `image/png`, `image/jpeg`, `image/gif`, or `image/webp`. The adapter places image blocks before the text on the first user message in the request, mirroring Anthropic's vision guidance.
+
 ### `ai.chat(messages, options?) -> Promise<string>`
 
 Multi-turn conversation. Pass an array of `{ role, content }` messages.

@@ -52,6 +52,25 @@ That's it. With zero configuration, Limn:
 - Writes a JSON trace record to `.limn/traces/<ulid>.json` with API keys
   redacted out of the persisted request, response, and error message.
 
+## Sending images
+
+Pass an `attachments` array on any Layer 1 call to send an image alongside the prompt. Limn handles base64 encoding inside the Anthropic adapter, so you supply raw bytes (a `Buffer`) or a URL the provider can fetch.
+
+```ts
+import { ai } from "limn";
+import { readFile } from "node:fs/promises";
+
+const png = await readFile("photo.png");
+
+const description = await ai.ask("Describe this image:", {
+  attachments: [
+    { kind: "image", source: { type: "base64", data: png, mimeType: "image/png" } },
+  ],
+});
+```
+
+Multiple images attach in order; they appear before the prompt text on the request the provider sees. See [API surface reference](api-surface.md) for the full `Attachment` union and the `image/png` / `image/jpeg` / `image/gif` / `image/webp` MIME types accepted today.
+
 ## Tracing
 
 Every Layer 1 call lands as one JSON file under `trace.dir` (default

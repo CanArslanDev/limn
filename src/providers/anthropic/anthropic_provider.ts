@@ -33,6 +33,7 @@
  * `unknown`/sealed.
  */
 
+import type { Attachment, ChatMessage } from "../../client/options.js";
 import { AuthError, ModelTimeoutError, ProviderError, RateLimitError } from "../../errors/index.js";
 import type { Provider, ProviderRequest, ProviderResponse } from "../provider.js";
 
@@ -204,7 +205,7 @@ export class AnthropicProvider implements Provider {
     const sdkRequest = {
       model: req.model,
       max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
-      messages: req.messages.map((m) => ({ role: m.role, content: m.content })),
+      messages: buildSdkMessages(req.messages, req.attachments),
       ...(req.system === undefined ? {} : { system: req.system }),
       ...(req.temperature === undefined ? {} : { temperature: req.temperature }),
     };
@@ -307,6 +308,97 @@ export class AnthropicProvider implements Provider {
     this.state = next;
     return next;
   }
+}
+
+/**
+ * Anthropic content block emitted on a `role: "user"` message when the request
+ * carries attachments. The SDK accepts `content: string` (no attachments) or
+ * `content: Array<{ type: "text"; text } | { type: "image"; source }>` (mixed).
+ * The two helpers below translate the Limn shapes into the latter when
+ * attachments are present.
+ */
+type AnthropicImageBlock =
+  | {
+      readonly type: "image";
+      readonly source: {
+        readonly type: "base64";
+        readonly media_type: string;
+        readonly data: string;
+      };
+    }
+  | { readonly type: "image"; readonly source: { readonly type: "url"; readonly url: string } };
+
+type AnthropicTextBlock = { readonly type: "text"; readonly text: string };
+
+type AnthropicContent = string | ReadonlyArray<AnthropicImageBlock | AnthropicTextBlock>;
+
+/**
+ * Build the `messages` array for the SDK call. Attachments (when supplied)
+ * attach to the first `role: "user"` message as a content array with image
+ * blocks BEFORE the text block; Anthropic's vision documentation recommends
+ * leading with images so the model attends to them first. Subsequent
+ * messages keep their plain-string `content` shape (back-compat with the
+ * existing fixture-based assertions in `anthropic_provider.test.ts`).
+ *
+ * If no attachments are supplied, every message stays a plain
+ * `{ role, content: string }` pair, identical to the pre-batch-1.5 shape.
+ */
+function buildSdkMessages(
+  messages: readonly ChatMessage[],
+  attachments: readonly Attachment[] | undefined,
+): ReadonlyArray<{ readonly role: ChatMessage["role"]; readonly content: AnthropicContent }> {
+  if (attachments === undefined || attachments.length === 0) {
+    return messages.map((m) => ({ role: m.role, content: m.content }));
+  }
+  let firstUserSeen = false;
+  return messages.map((m) => {
+    if (m.role === "user" && !firstUserSeen) {
+      firstUserSeen = true;
+      const content: ReadonlyArray<AnthropicImageBlock | AnthropicTextBlock> = [
+        ...attachments.map(toAnthropicAttachmentBlock),
+        { type: "text", text: m.content },
+      ];
+      return { role: m.role, content };
+    }
+    return { role: m.role, content: m.content };
+  });
+}
+
+/**
+ * Translate one Limn `Attachment` to its Anthropic content-block shape.
+ * Pulled out for testability and to keep `buildSdkMessages` focused on
+ * placement (which message the blocks attach to) rather than per-attachment
+ * shape conversion.
+ */
+function toAnthropicAttachmentBlock(att: Attachment): AnthropicImageBlock {
+  // Today the union has one variant; the discriminator branch reads as a
+  // single arm. When file/document attachments land in a future batch they
+  // get their own arms and Anthropic's `document` content block.
+  if (att.kind === "image") {
+    if (att.source.type === "base64") {
+      return {
+        type: "image",
+        source: {
+          type: "base64",
+          media_type: att.source.mimeType,
+          data: att.source.data.toString("base64"),
+        },
+      };
+    }
+    return {
+      type: "image",
+      source: { type: "url", url: att.source.url },
+    };
+  }
+  // The union is exhaustive today; this satisfies the never-check that
+  // would surface if a future arm landed without a translation here.
+  const _exhaustive: never = att.kind;
+  throw new ProviderError(
+    `Unsupported attachment kind: ${String(_exhaustive)}`,
+    "anthropic",
+    undefined,
+    false,
+  );
 }
 
 /**

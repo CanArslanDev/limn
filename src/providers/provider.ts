@@ -5,7 +5,7 @@
  * the public surface.
  */
 
-import type { ChatMessage } from "../client/options.js";
+import type { Attachment, ChatMessage } from "../client/options.js";
 import type { ModelName } from "./model_name.js";
 
 export interface ProviderRequest {
@@ -16,6 +16,14 @@ export interface ProviderRequest {
   readonly temperature?: number;
   readonly timeoutMs?: number;
   readonly tools?: readonly ProviderToolSpec[];
+  /**
+   * Attachments to send with this request. The adapter is responsible for
+   * injecting them as content blocks on the FIRST `role: "user"` message in
+   * `messages`; this keeps `ChatMessage.content: string` unchanged across the
+   * codebase while concentrating per-vendor translation in one place. Order
+   * within the array is preserved when emitted as content blocks.
+   */
+  readonly attachments?: readonly Attachment[];
 }
 
 export interface ProviderToolSpec {

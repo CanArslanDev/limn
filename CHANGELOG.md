@@ -73,6 +73,17 @@ All notable changes to this project are documented here. Format follows
   per-call `TraceState` object built fresh by the dispatcher factory.
   Sink failures are surfaced via `console.warn` and never crash the
   user's call. Opt out of tracing entirely with `trace.enabled: false`.
+- Image attachments: `AskOptions` (and the other Layer 1 option shapes)
+  now accept `attachments: readonly Attachment[]`. The new `Attachment`
+  union ships with `ImageAttachment` (sealed by a `kind` discriminator
+  for future file/document variants); each image carries a sealed
+  `ImageSource` (`{ type: "base64", data: Buffer, mimeType }` or
+  `{ type: "url", url }`). The Anthropic adapter translates attachments
+  into vision content blocks on the first user message (images before
+  the text per Anthropic's vision guidance), handling base64 encoding
+  internally so the user never encodes anything by hand. `Attachment`,
+  `ImageAttachment`, `ImageSource`, and `SupportedImageMimeType` are
+  re-exported from the package root.
 
 ### Changed
 
