@@ -7,17 +7,9 @@
  * appropriate provider's `models()` table.
  */
 
-export type AnthropicModel =
-  | "claude-opus-4-7"
-  | "claude-sonnet-4-6"
-  | "claude-haiku-4-5";
+export type AnthropicModel = "claude-opus-4-7" | "claude-sonnet-4-6" | "claude-haiku-4-5";
 
-export type OpenAIModel =
-  | "gpt-4o"
-  | "gpt-4o-mini"
-  | "gpt-4-turbo"
-  | "o1-preview"
-  | "o1-mini";
+export type OpenAIModel = "gpt-4o" | "gpt-4o-mini" | "gpt-4-turbo" | "o1-preview" | "o1-mini";
 
 export type ModelName = AnthropicModel | OpenAIModel;
 

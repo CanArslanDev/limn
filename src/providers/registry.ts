@@ -4,11 +4,7 @@
  * model, never picks a provider.
  */
 
-import {
-  ANTHROPIC_MODELS,
-  OPENAI_MODELS,
-  type ModelName,
-} from "./model_name.js";
+import { ANTHROPIC_MODELS, type ModelName, OPENAI_MODELS } from "./model_name.js";
 import type { Provider } from "./provider.js";
 
 export type ProviderName = "anthropic" | "openai";
@@ -32,9 +28,7 @@ export function registerProvider(name: ProviderName, provider: Provider): void {
 export function getProvider(name: ProviderName): Provider {
   const p = _providers.get(name);
   if (!p) {
-    throw new Error(
-      `Provider "${name}" not registered. Did you set the API key for it?`,
-    );
+    throw new Error(`Provider "${name}" not registered. Did you set the API key for it?`);
   }
   return p;
 }

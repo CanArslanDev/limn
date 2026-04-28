@@ -29,6 +29,11 @@ updates:
       # silently shift our public surface.
       - dependency-name: "@anthropic-ai/sdk"
       - dependency-name: openai
+      # Zod is pinned (not ranged) due to a vitest+ESM namespace re-export
+      # bug in Zod 3.25.x where `import { z } from "zod"` resolves to a
+      # shape that lacks `.object` under vitest. Bump deliberately after
+      # confirming the pinned vitest can import the new Zod.
+      - dependency-name: zod
     groups:
       build-tooling:
         patterns:

@@ -7,6 +7,7 @@
  */
 
 import type { z } from "zod";
+import { agent } from "../agent/agent.js";
 import type {
   AskOptions,
   ChatMessage,
@@ -21,15 +22,11 @@ export interface Ai {
 
   chat(messages: readonly ChatMessage[], options?: ChatOptions): Promise<string>;
 
-  extract<T>(
-    schema: z.ZodSchema<T>,
-    input: string,
-    options?: ExtractOptions,
-  ): Promise<T>;
+  extract<T>(schema: z.ZodSchema<T>, input: string, options?: ExtractOptions): Promise<T>;
 
   stream(prompt: string, options?: StreamOptions): AsyncIterable<string>;
 
-  agent: typeof import("../agent/agent.js").agent;
+  readonly agent: typeof agent;
 }
 
 const notImplemented = (fn: string): never => {
@@ -37,7 +34,7 @@ const notImplemented = (fn: string): never => {
 };
 
 export const ai: Ai = {
-  async ask(_prompt, _contextOrOptions, _maybeOptions) {
+  async ask(_prompt: string, _contextOrOptions?: string | AskOptions, _maybeOptions?: AskOptions) {
     return notImplemented("ask");
   },
 
@@ -49,14 +46,9 @@ export const ai: Ai = {
     return notImplemented("extract");
   },
 
-  // eslint-disable-next-line require-yield
-  async *stream(_prompt, _options) {
-    notImplemented("stream");
+  stream(_prompt, _options) {
+    throw new Error("ai.stream is not implemented yet (Phase 1).");
   },
 
-  // Lazy property avoids circular-import surprise at module init.
-  get agent() {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires
-    return require("../agent/agent.js").agent;
-  },
+  agent,
 };

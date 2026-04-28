@@ -6,25 +6,16 @@
  * Phase 1 placeholder: throws on use until the implementation lands.
  */
 
-import type {
-  Provider,
-  ProviderRequest,
-  ProviderResponse,
-} from "../provider.js";
+import type { Provider, ProviderRequest, ProviderResponse } from "../provider.js";
 
 export class AnthropicProvider implements Provider {
   public readonly name = "anthropic" as const;
 
   public async request(_req: ProviderRequest): Promise<ProviderResponse> {
-    throw new Error(
-      "AnthropicProvider.request is not implemented yet (Phase 1).",
-    );
+    throw new Error("AnthropicProvider.request is not implemented yet (Phase 1).");
   }
 
-  // eslint-disable-next-line require-yield
-  public async *stream(_req: ProviderRequest): AsyncIterable<string> {
-    throw new Error(
-      "AnthropicProvider.stream is not implemented yet (Phase 1).",
-    );
+  public stream(_req: ProviderRequest): AsyncIterable<string> {
+    throw new Error("AnthropicProvider.stream is not implemented yet (Phase 1).");
   }
 }

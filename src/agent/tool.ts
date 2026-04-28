@@ -29,9 +29,7 @@ export interface RegisteredTool {
   invoke(rawInput: unknown): Promise<unknown>;
 }
 
-export function tool<TInput, TOutput>(
-  def: ToolDefinition<TInput, TOutput>,
-): RegisteredTool {
+export function tool<TInput, TOutput>(def: ToolDefinition<TInput, TOutput>): RegisteredTool {
   return {
     name: def.name,
     description: def.description,

@@ -5,10 +5,7 @@
  */
 
 import { describe, expect, it } from "vitest";
-import {
-  ANTHROPIC_MODELS,
-  OPENAI_MODELS,
-} from "../../src/providers/model_name.js";
+import { ANTHROPIC_MODELS, OPENAI_MODELS } from "../../src/providers/model_name.js";
 import { providerFor } from "../../src/providers/registry.js";
 
 describe("providerFor", () => {

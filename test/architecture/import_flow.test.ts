@@ -17,57 +17,45 @@
  * bug.
  */
 
-import { readdir, readFile } from "node:fs/promises";
-import { join, relative } from "node:path";
+import { readFile, readdir } from "node:fs/promises";
+import { dirname, join, relative, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const SRC = join(__dirname, "..", "..", "src");
+const HERE = dirname(fileURLToPath(import.meta.url));
+const SRC = join(HERE, "..", "..", "src");
 
 interface LayerRule {
+  /** Glob-style path prefix (relative to src/) that selects files. */
   readonly layer: string;
-  /** Path prefixes the layer is allowed to import from (relative to src/). */
+  /** Sibling layers this layer is allowed to import from (relative to src/). */
   readonly mayImportFrom: readonly string[];
 }
 
+/**
+ * Each rule's `layer` is matched as a prefix against the file's path relative
+ * to `src/`. A file is *always* allowed to import from inside its own layer
+ * (its own directory or its own file). `mayImportFrom` lists the *other*
+ * layers it may reach into.
+ *
+ * `errors/` is the entire errors directory. `providers/model_name.ts` is a
+ * single-file layer. `providers/anthropic` matches both adapter file and any
+ * future helpers under that vendor.
+ */
 const LAYER_RULES: readonly LayerRule[] = [
+  { layer: "index.ts", mayImportFrom: ["client", "agent", "config", "errors", "providers"] },
   { layer: "errors", mayImportFrom: [] },
   { layer: "trace", mayImportFrom: [] },
-  {
-    layer: "providers/model_name.ts",
-    mayImportFrom: [],
-  },
-  {
-    layer: "providers/provider.ts",
-    mayImportFrom: ["providers/model_name", "client/options"],
-  },
-  {
-    layer: "providers/registry.ts",
-    mayImportFrom: ["providers/model_name", "providers/provider"],
-  },
-  {
-    layer: "providers/anthropic",
-    mayImportFrom: ["providers/provider", "providers/model_name", "errors"],
-  },
-  {
-    layer: "providers/openai",
-    mayImportFrom: ["providers/provider", "providers/model_name", "errors"],
-  },
-  {
-    layer: "config",
-    mayImportFrom: ["providers/model_name"],
-  },
-  {
-    layer: "agent",
-    mayImportFrom: ["providers/model_name", "errors"],
-  },
-  {
-    layer: "client",
-    mayImportFrom: ["providers", "agent", "config", "trace", "errors"],
-  },
-  {
-    layer: "inspect",
-    mayImportFrom: ["trace"],
-  },
+  { layer: "providers/model_name.ts", mayImportFrom: [] },
+  { layer: "providers/provider.ts", mayImportFrom: ["providers", "client/options"] },
+  { layer: "providers/registry.ts", mayImportFrom: ["providers"] },
+  { layer: "providers/anthropic", mayImportFrom: ["providers", "errors"] },
+  { layer: "providers/openai", mayImportFrom: ["providers", "errors"] },
+  { layer: "config", mayImportFrom: ["providers/model_name"] },
+  { layer: "agent", mayImportFrom: ["agent", "providers/model_name", "errors"] },
+  { layer: "client", mayImportFrom: ["client", "providers", "agent", "config", "trace", "errors"] },
+  { layer: "inspect", mayImportFrom: ["trace"] },
+  { layer: "cli", mayImportFrom: [] },
 ];
 
 async function walkTs(dir: string, acc: string[] = []): Promise<string[]> {
@@ -96,27 +84,44 @@ function importPathsFrom(source: string): string[] {
   return out;
 }
 
+/**
+ * Take a relative import like `../providers/model_name.js` originating in
+ * `src/client/ai.ts`, resolve it against the importer's directory, then
+ * return the path relative to `src/` with the `.js`/`.ts` suffix stripped.
+ * Returns `null` if the import is not under `src/` (external module).
+ */
+function resolveImport(importerAbs: string, importPath: string): string | null {
+  if (!importPath.startsWith(".")) return null;
+  const resolved = resolve(dirname(importerAbs), importPath);
+  const rel = relative(SRC, resolved).replaceAll("\\", "/");
+  if (rel.startsWith("..")) return null;
+  return rel.replace(/\.js$/, "").replace(/\.ts$/, "");
+}
+
 describe("architecture: unidirectional import flow", () => {
   it("every src/ file's relative imports stay within its layer's allowance", async () => {
     const files = await walkTs(SRC);
     const violations: string[] = [];
 
     for (const file of files) {
-      const rel = relative(SRC, file).replaceAll("\\", "/");
-      const rule = LAYER_RULES.find((r) => rel.startsWith(r.layer));
+      const relFile = relative(SRC, file).replaceAll("\\", "/");
+      const rule = LAYER_RULES.find((r) => relFile.startsWith(r.layer));
       if (!rule) continue;
 
       const source = await readFile(file, "utf8");
-      const imports = importPathsFrom(source).filter((i) => i.startsWith("."));
+      for (const raw of importPathsFrom(source)) {
+        const target = resolveImport(file, raw);
+        if (target === null) continue;
 
-      for (const imp of imports) {
-        const normalized = imp.replace(/\.\.\//g, "").replace(/^\.\//, "").replace(/\.js$/, "");
-        const ok = rule.mayImportFrom.some((allowed) =>
-          normalized.startsWith(allowed),
-        );
-        const sameLayer = normalized.startsWith(rule.layer.replace(/\.ts$/, ""));
-        if (!ok && !sameLayer) {
-          violations.push(`${rel}\n  imports ${imp}\n  layer "${rule.layer}" may import from: ${rule.mayImportFrom.join(", ") || "(nothing)"}`);
+        const ownLayer = rule.layer.replace(/\.ts$/, "");
+        const allowed =
+          target.startsWith(ownLayer) ||
+          rule.mayImportFrom.some((p) => target === p || target.startsWith(`${p}/`));
+
+        if (!allowed) {
+          violations.push(
+            `${relFile}\n  imports ${raw}  (resolves to ${target})\n  layer "${rule.layer}" may import from: ${rule.mayImportFrom.join(", ") || "(nothing)"}`,
+          );
         }
       }
     }

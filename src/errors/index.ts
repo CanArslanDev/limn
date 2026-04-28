@@ -9,7 +9,7 @@ export abstract class LimnError extends Error {
 
   public constructor(
     message: string,
-    public readonly cause?: unknown,
+    public override readonly cause?: unknown,
   ) {
     super(message);
     this.name = this.constructor.name;
