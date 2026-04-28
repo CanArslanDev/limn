@@ -8,8 +8,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ANTHROPIC_MODELS, OPENAI_MODELS } from "../../src/providers/model_name.js";
 import type { Provider } from "../../src/providers/provider.js";
 import {
-  getProvider,
   type ProviderName,
+  getProvider,
   providerFor,
   registerProvider,
 } from "../../src/providers/registry.js";
@@ -74,8 +74,6 @@ describe("registerProvider + getProvider", () => {
   it("getProvider throws a clear message when the name was never registered", () => {
     // Cast to bypass the union check; simulates a future provider name not
     // yet wired into the registry.
-    expect(() => getProvider("ghost" as ProviderName)).toThrow(
-      /Provider "ghost" not registered/,
-    );
+    expect(() => getProvider("ghost" as ProviderName)).toThrow(/Provider "ghost" not registered/);
   });
 });
