@@ -506,18 +506,21 @@ describe("HookDispatcher retry integration", () => {
     };
     const dispatcher = new HookDispatcher({ retry: tinyDelayStrategy });
     let calls = 0;
-    const start = Date.now();
+    // hrtime.bigint() has nanosecond resolution; Date.now() rounds to whole
+    // ms and on fast CI runners a 1ms setTimeout can elapse in well under a
+    // millisecond of wall clock time, which made the prior `>= 1` ms
+    // assertion intermittently fail. We still want to prove the sleep
+    // actually ran rather than being a no-op, so we assert >= 1_000_000ns
+    // (1ms) at hrtime precision.
+    const start = process.hrtime.bigint();
     const result = await dispatcher.run(baseCtx, async () => {
       calls += 1;
       if (calls === 1) throw new ProviderError("transient", "anthropic");
       return okResult;
     });
+    const elapsedNs = process.hrtime.bigint() - start;
     expect(calls).toBe(2);
     expect(result).toEqual(okResult);
-    // Strategy returned a 1ms delay; if `defaultSleep` were a no-op the
-    // elapsed time would be sub-millisecond. Asserting `>= 1` proves the
-    // setTimeout-backed sleep actually fired without binding to a brittle
-    // upper bound.
-    expect(Date.now() - start).toBeGreaterThanOrEqual(1);
+    expect(elapsedNs).toBeGreaterThanOrEqual(1_000_000n);
   });
 });
