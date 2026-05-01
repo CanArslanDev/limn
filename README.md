@@ -65,7 +65,8 @@ Set `ANTHROPIC_API_KEY` in your environment (`export ANTHROPIC_API_KEY=sk-ant-..
 ```ts
 import { ai } from "limn";
 
-// Single-shot question. Calls Anthropic end-to-end as of batch 1.2.
+// Single-shot question. Calls Anthropic end-to-end by default; pass
+// `{ model: "gpt-4o-mini" }` to route through OpenAI instead.
 const summary = await ai.ask("Summarize this:", longText);
 
 // Conversation

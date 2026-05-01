@@ -32,7 +32,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 export OPENAI_API_KEY=sk-...
 ```
 
-As of batch 1.2 the Anthropic adapter is wired end-to-end: the first time your code calls `ai.ask` (or any future Layer 1 entry point) without an explicitly registered provider, Limn lazily constructs an `AnthropicProvider` that reads `ANTHROPIC_API_KEY` from `process.env`. If the env var is missing, the call rejects with an `AuthError` naming the variable to set rather than a generic "not registered" error.
+As of batch 1.2 the Anthropic adapter is wired end-to-end and as of batch 1.6 the OpenAI adapter is too: the first time your code calls `ai.ask` (or any future Layer 1 entry point) without an explicitly registered provider, Limn lazily constructs an `AnthropicProvider` (when the chosen model is an Anthropic model) or an `OpenAIProvider` (when it is an OpenAI model) reading `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` from `process.env` accordingly. If the relevant env var is missing, the call rejects with an `AuthError` naming the variable to set rather than a generic "not registered" error. The retry policy, trace pipeline, attachments, and timeout controls described elsewhere on this page apply identically to both providers.
 
 You can also set keys in `limn.config.ts` (see below) or pass them per call. The local-first trace pipeline never persists keys to disk; they live in process memory only.
 

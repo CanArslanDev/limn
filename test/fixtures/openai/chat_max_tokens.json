@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-test002",
+  "object": "chat.completion",
+  "created": 1714521601,
+  "model": "gpt-4o-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "truncated"
+      },
+      "logprobs": null,
+      "finish_reason": "length"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 4,
+    "completion_tokens": 8,
+    "total_tokens": 12
+  }
+}

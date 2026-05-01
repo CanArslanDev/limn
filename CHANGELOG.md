@@ -86,6 +86,23 @@ All notable changes to this project are documented here. Format follows
   batch as a non-breaking type widening. `Attachment`,
   `ImageAttachment`, `ImageSource`, and `SupportedImageMimeType` are
   re-exported from the package root.
+- OpenAI provider adapter wraps `openai`'s chat completions API and
+  mirrors the Anthropic adapter shape one-to-one: lazy SDK import,
+  cached client + error-class table, fetch-injection seam for tests,
+  same `AbortController` timeout enforcement, same
+  `AuthError` / `RateLimitError(retryAfterMs)` / `ProviderError` /
+  `ModelTimeoutError` mapping. `ai.ask("hi", { model: "gpt-4o-mini" })`
+  now resolves end-to-end against OpenAI when `OPENAI_API_KEY` is set;
+  the registry lazy-bootstraps an `OpenAIProvider` from the env var on
+  first use. System instructions ride as a leading
+  `{ role: "system", content }` message (OpenAI's chat completions API
+  has no top-level `system` field). Image attachments translate to
+  `image_url` content parts with a `data:<mime>;base64,<...>` URI,
+  placed before the text on the first user message; URL-form image
+  sources await the same SDK-floor bump that gates Anthropic's URL
+  variant. Streaming is deferred to batch 1.7. `OpenAIProvider` and
+  `OpenAIProviderOptions` are re-exported from the package root for
+  direct construction.
 
 ### Changed
 

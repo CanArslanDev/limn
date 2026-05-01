@@ -109,17 +109,25 @@ Every typed failure derives from `LimnError`. See [Troubleshooting](troubleshoot
 
 Most users never touch the provider classes directly: `ai.ask` resolves a model name to a provider via the registry, and the registry lazy-bootstraps the right adapter from the relevant `<VENDOR>_API_KEY` env var. Power users who need to register a provider explicitly (custom keys, alternate baseURLs, test seams) can construct the adapter themselves.
 
-`AnthropicProvider` and `AnthropicProviderOptions` ship from the package root so direct construction stays a one-line import:
+`AnthropicProvider` / `AnthropicProviderOptions` and `OpenAIProvider` / `OpenAIProviderOptions` ship from the package root so direct construction stays a one-line import:
 
 ```ts
-import { AnthropicProvider, type AnthropicProviderOptions } from "limn";
+import {
+  AnthropicProvider,
+  type AnthropicProviderOptions,
+  OpenAIProvider,
+  type OpenAIProviderOptions,
+} from "limn";
 
-const provider = new AnthropicProvider({ apiKey: mySecretManagerLookup() });
+const anthropic = new AnthropicProvider({ apiKey: mySecretManagerLookup("anthropic") });
+const openai = new OpenAIProvider({ apiKey: mySecretManagerLookup("openai") });
 ```
 
-`AnthropicProviderOptions` carries two fields today:
+Both option shapes carry two fields today (mirrored intentionally so the two adapters stay diff-friendly):
 
-- `apiKey?: string | undefined` - explicit API key. Omit the field entirely to fall back to `process.env.ANTHROPIC_API_KEY`. Pass the field with `undefined` explicitly to bypass the env-var read (useful when test code wants to assert the missing-key path on a developer machine that has the var set).
+- `apiKey?: string | undefined` - explicit API key. Omit the field entirely to fall back to `process.env.ANTHROPIC_API_KEY` (Anthropic) or `process.env.OPENAI_API_KEY` (OpenAI). Pass the field with `undefined` explicitly to bypass the env-var read (useful when test code wants to assert the missing-key path on a developer machine that has the var set).
 - `fetch?: typeof globalThis.fetch | undefined` - custom `fetch` implementation forwarded to the SDK. Test code injects a fake `fetch` that replays recorded JSON fixtures; production code omits this and the SDK uses the global `fetch`.
 
-The adapter sets the SDK's `maxRetries` to `0` so retry policy stays under Limn's control (the client-layer retry loop lands in a later batch). Direct adapter callers who want SDK-level retries should construct their own SDK client instead.
+Both adapters set the SDK's `maxRetries` to `0` so retry policy stays under Limn's control (the client-layer retry loop). Direct adapter callers who want SDK-level retries should construct their own SDK client instead.
+
+The OpenAI adapter routes system instructions through a leading `{ role: "system", content }` message because OpenAI's chat completions API has no top-level `system` field; the Anthropic adapter uses Anthropic's top-level `system` field. The user-facing `ai.ask(..., { system: "..." })` shape is identical across providers; the difference lives behind the adapter boundary.

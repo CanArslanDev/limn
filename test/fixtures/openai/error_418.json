@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "I'm a teapot",
+    "type": "api_error",
+    "param": null,
+    "code": null
+  }
+}

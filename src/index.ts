@@ -37,6 +37,11 @@ export {
 } from "./providers/anthropic/anthropic_provider.js";
 
 export {
+  OpenAIProvider,
+  type OpenAIProviderOptions,
+} from "./providers/openai/openai_provider.js";
+
+export {
   AuthError,
   LimnError,
   ModelTimeoutError,

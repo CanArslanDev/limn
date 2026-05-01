@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-test-image-001",
+  "object": "chat.completion",
+  "created": 1714521604,
+  "model": "gpt-4o-mini",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "I see a tiny PNG."
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 12,
+    "completion_tokens": 6,
+    "total_tokens": 18
+  }
+}

@@ -15,6 +15,7 @@
 import { AuthError } from "../errors/index.js";
 import { AnthropicProvider } from "./anthropic/anthropic_provider.js";
 import { ANTHROPIC_MODELS, type ModelName, OPENAI_MODELS } from "./model_name.js";
+import { OpenAIProvider } from "./openai/openai_provider.js";
 import type { Provider } from "./provider.js";
 
 export type ProviderName = "anthropic" | "openai";
@@ -74,11 +75,12 @@ function bootstrap(name: ProviderName): Provider | null {
       if (key === undefined || key === "") return null;
       return new AnthropicProvider({ apiKey: key });
     }
-    case "openai":
-      // OpenAI adapter lands in batch 1.6. Until then, bootstrap returns null
-      // so getProvider throws AuthError naming OPENAI_API_KEY (better UX than
-      // an unrelated "not implemented" message).
-      return null;
+    case "openai": {
+      // biome-ignore lint/complexity/useLiteralKeys: process.env requires bracket notation under TS noPropertyAccessFromIndexSignature
+      const key = process.env["OPENAI_API_KEY"];
+      if (key === undefined || key === "") return null;
+      return new OpenAIProvider({ apiKey: key });
+    }
   }
 }
 

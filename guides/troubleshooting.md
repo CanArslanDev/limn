@@ -77,7 +77,7 @@ You called a model owned by a vendor whose key is missing AND no provider was re
 - Set the env var (`export ANTHROPIC_API_KEY=sk-ant-...` or the OpenAI equivalent) and rerun. Limn lazily constructs the provider on the next call.
 - Or call `registerProvider("anthropic", new AnthropicProvider(myKey))` explicitly before the first `ai.ask` if your key lives somewhere other than the env (a secret manager, a CLI flag, etc.).
 
-The same message variant exists for `OPENAI_API_KEY` once batch 1.6 lights up the OpenAI adapter; until then any call against an OpenAI model raises this AuthError because no bootstrap path exists yet.
+The same message variant exists for `OPENAI_API_KEY`. As of batch 1.6 the OpenAI adapter is wired end-to-end, so an OpenAI-routed call (e.g. `ai.ask("hi", { model: "gpt-4o-mini" })`) lazy-bootstraps an `OpenAIProvider` from the env var on first use; absence of the var raises this AuthError naming `OPENAI_API_KEY` instead of a generic "not registered" error.
 
 ### Schema diff explodes in the inspector
 
