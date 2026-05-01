@@ -11,7 +11,8 @@ LimnError                     // abstract base
 ├── ProviderError             // upstream 5xx, transport, malformed
 ├── ModelTimeoutError         // exceeded configured timeoutMs
 ├── SchemaValidationError     // ai.extract or tool input mismatch
-└── ToolExecutionError        // a registered tool's run callback threw
+├── ToolExecutionError        // a registered tool's run callback threw
+└── ConfigLoadError           // limn.config.* found but failed to load
 ```
 
 `instanceof LimnError` once, then narrow on the variant.
@@ -63,6 +64,18 @@ A registered tool's `run` callback threw. Carries `toolName` and `toolInput`.
 
 - The agent loop surfaces this back to the model on the next turn (so the model can adjust its plan), unless `onError: { ToolExecutionError: { retry: "never" } }`.
 - The original error lives on `cause` so you can re-throw or log it without losing the stack.
+
+## `ConfigLoadError`
+
+A `limn.config.{ts,mts,js,mjs,cjs}` file was discovered at the project root but failed to load. Carries `configPath` (the absolute path to the offending file) and the original error on `cause`.
+
+Common triggers:
+
+- A syntax error in the config file. Check the line the underlying SyntaxError points at.
+- The config file is `.ts` or `.mts` but the runtime has no TypeScript loader installed (no `tsx`, no `ts-node`, no Node 22+ `--experimental-strip-types`). Switch to `.js` or install a loader.
+- An import inside the config file fails (a missing module, a bad path). The original error lives on `cause`.
+
+Recovery: fix the file, or move it aside (e.g. `mv limn.config.ts limn.config.ts.bak`) to disable discovery temporarily so the rest of the application can run while you debug.
 
 ## Common failure modes
 

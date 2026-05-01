@@ -8,12 +8,14 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AuthError } from "../../src/errors/index.js";
 import { AnthropicProvider } from "../../src/providers/anthropic/anthropic_provider.js";
 import { ANTHROPIC_MODELS, OPENAI_MODELS } from "../../src/providers/model_name.js";
+import { OpenAIProvider } from "../../src/providers/openai/openai_provider.js";
 import type { Provider } from "../../src/providers/provider.js";
 import {
   type ProviderName,
   getProvider,
   providerFor,
   registerProvider,
+  resolveProvider,
   unregisterProvider,
 } from "../../src/providers/registry.js";
 
@@ -112,5 +114,33 @@ describe("registerProvider + getProvider", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe("resolveProvider", () => {
+  it("delegates to getProvider when no per-call apiKey is supplied", () => {
+    const fake = new FakeProvider("anthropic");
+    registerProvider("anthropic", fake);
+    expect(resolveProvider("anthropic")).toBe(fake);
+  });
+
+  it("constructs a fresh AnthropicProvider when an apiKey is supplied, bypassing the cached registry slot", () => {
+    const fake = new FakeProvider("anthropic");
+    registerProvider("anthropic", fake);
+    const fresh = resolveProvider("anthropic", "sk-ant-percall");
+    expect(fresh).toBeInstanceOf(AnthropicProvider);
+    expect(fresh).not.toBe(fake);
+    // The cached slot must be untouched: a subsequent call without the
+    // override returns the registered fake, not the per-call instance.
+    expect(getProvider("anthropic")).toBe(fake);
+  });
+
+  it("constructs a fresh OpenAIProvider when an apiKey is supplied for openai", () => {
+    const fake = new FakeProvider("openai");
+    registerProvider("openai", fake);
+    const fresh = resolveProvider("openai", "sk-percall");
+    expect(fresh).toBeInstanceOf(OpenAIProvider);
+    expect(fresh).not.toBe(fake);
+    expect(getProvider("openai")).toBe(fake);
   });
 });

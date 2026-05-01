@@ -130,6 +130,39 @@ All notable changes to this project are documented here. Format follows
   errorAfterChunks?)` and `pushStreamError(err)`, captures requests in
   `streamRequests`, and implements `requestStream` so integration tests
   drive `ai.stream` end-to-end without a network call.
+- Project config resolution: every Layer 1 call now resolves its
+  effective `LimnConfig` by walking four layers in precedence order
+  (defaults < env < `limn.config.*` < per-call options). The new
+  `loadProjectConfig` discovers `limn.config.{ts,mts,js,mjs,cjs}` at the
+  current working directory via `node:module.createRequire`, caches the
+  result for the process lifetime, and surfaces load failures as
+  `ConfigLoadError` (new variant) carrying the absolute path. Nested
+  groups (`retry`, `trace`) merge per sub-field rather than wholesale,
+  so `{ retry: { maxAttempts: 5 } }` overrides only that knob and
+  inherits the rest. `LimnUserConfig` is now an explicit shape (rather
+  than `Partial<LimnConfig>`) so nested partials type-check, and is
+  re-exported from the package root for direct annotation.
+- `LIMN_TRACE_DIR` env var now overrides `trace.dir` in the resolution
+  chain. Other `LIMN_*` vars are intentionally unrecognized: new env
+  surface must add a switch arm in `envOverridesFromProcess` AND
+  document itself in `guides/getting-started.md` so the contract stays
+  explicit.
+- Per-call `apiKey` override on every Layer 1 option shape
+  (`AskOptions`, `ChatOptions`, `ExtractOptions`, `StreamOptions`).
+  When supplied, the client constructs a fresh provider adapter for
+  that single call WITHOUT touching the registry's cached slot, so
+  adjacent calls keep using the registered (or lazily-bootstrapped)
+  provider unchanged. The canonical use case is multi-tenant
+  deployment: each request carries the tenant's key without racing on
+  shared mutable state. The trace redactor scrubs the key out of the
+  persisted request and response.
+- `ConfigLoadError` variant joins the `LimnError` hierarchy. Carries
+  the absolute path to the offending config file plus the original
+  error on `cause`. Recovery: fix the syntax/import error, or rename
+  the file to disable discovery while debugging.
+- `resolveProvider(name, perCallApiKey?)` helper on the registry: the
+  one-line entry point the client uses to swap the cached provider
+  for a per-call adapter when `apiKey` is supplied.
 - OpenAI provider adapter wraps `openai`'s chat completions API and
   mirrors the Anthropic adapter shape one-to-one: lazy SDK import,
   cached client + error-class table, fetch-injection seam for tests,

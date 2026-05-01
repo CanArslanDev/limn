@@ -1,13 +1,18 @@
 /**
  * The `ai` namespace - Layer 1 entry point. All four members (`ask`, `chat`,
  * `extract`, `stream`) are wired against the `HookDispatcher` + provider
- * registry as of batch 1.7; `agent` (Layer 2) lands in Phase 3.
+ * registry, with the four-layer config resolution chain (defaults < env <
+ * `limn.config.*` < per-call options) honored on every call as of batch
+ * 1.8; `agent` (Layer 2) lands in Phase 3.
  */
 
 import type { z } from "zod";
 import { agent } from "../agent/agent.js";
 import type { ChatMessage as ProviderChatMessage } from "../client/options.js";
+import type { LimnUserConfig } from "../config/define_config.js";
 import { DEFAULT_CONFIG, type LimnConfig } from "../config/limn_config.js";
+import { loadProjectConfig } from "../config/load.js";
+import { envOverridesFromProcess, resolveConfig } from "../config/resolve.js";
 import { runExtract } from "../extract/extract.js";
 import { type Hook, HookDispatcher, newTraceId } from "../hooks/dispatcher.js";
 import { RedactionHook } from "../hooks/redaction_hook.js";
@@ -16,7 +21,7 @@ import { TraceHook } from "../hooks/trace_hook.js";
 import type { TraceState } from "../hooks/trace_state.js";
 import type { ModelName } from "../providers/model_name.js";
 import type { ProviderRequest } from "../providers/provider.js";
-import { type ProviderName, getProvider, providerFor } from "../providers/registry.js";
+import { type ProviderName, providerFor, resolveProvider } from "../providers/registry.js";
 import { FileSystemTraceSink } from "../trace/file_sink.js";
 import { type TraceRecord, type TraceSink, noopSink } from "../trace/trace.js";
 import type {
@@ -26,6 +31,43 @@ import type {
   ExtractOptions,
   StreamOptions,
 } from "./options.js";
+
+/**
+ * Lift per-call options into the LimnUserConfig partial shape so they slot
+ * into the resolution chain alongside env vars and `limn.config.ts`. Only
+ * the fields that LimnConfig recognizes flow through; vendor-specific
+ * fields (system, attachments, apiKey, ...) stay on the call options and
+ * are read directly by the entry points.
+ */
+function callOptionsToUserConfig(opts: {
+  readonly model?: ModelName;
+  readonly timeoutMs?: number;
+  readonly maxRetries?: number;
+}): LimnUserConfig {
+  const out: { -readonly [K in keyof LimnUserConfig]: LimnUserConfig[K] } = {};
+  if (opts.model !== undefined) out.defaultModel = opts.model;
+  if (opts.timeoutMs !== undefined) out.timeoutMs = opts.timeoutMs;
+  if (opts.maxRetries !== undefined) out.retry = { maxAttempts: opts.maxRetries };
+  return out;
+}
+
+/**
+ * Resolve the effective `LimnConfig` for one call by walking the four
+ * layers (defaults < env < limn.config.ts < per-call options) in
+ * precedence order. Pulled into a helper because all four `ai.*` entry
+ * points need the identical resolution; inlining it would invite drift.
+ */
+function resolveCallConfig(opts?: {
+  readonly model?: ModelName;
+  readonly timeoutMs?: number;
+  readonly maxRetries?: number;
+}): LimnConfig {
+  return resolveConfig({
+    envOverrides: envOverridesFromProcess(),
+    fileConfig: loadProjectConfig(),
+    callOverrides: opts === undefined ? {} : callOptionsToUserConfig(opts),
+  });
+}
 
 export interface Ai {
   ask(prompt: string, options?: AskOptions): Promise<string>;
@@ -68,18 +110,19 @@ export interface DispatcherFactoryContext {
 /**
  * Factory that builds the dispatcher used by every public `ai.*` call. The
  * default wires the production retry strategy (exponential backoff against
- * `DEFAULT_CONFIG.retry`) and the production trace + redaction hooks
- * (writing to `.limn/traces/` per `DEFAULT_CONFIG.trace`). Tests replace
+ * the resolved `LimnConfig.retry`) and the production trace + redaction
+ * hooks (writing to the resolved `LimnConfig.trace.dir`). Tests replace
  * the factory via {@link __setDispatcherFactoryForTests} to inject a
  * recording `sleepFn`, swap the sink for a recording one, or pin
  * `LimnConfig.trace.dir` to an isolated tmp directory.
  *
- * The factory takes a per-call context so the trace hook can capture the
- * exact request that left the client; building the hook stack inside the
- * factory keeps `ai.ask` short and pushes the wiring into one named
- * helper.
+ * The second argument is the per-call resolved `LimnConfig` (defaults <
+ * env < limn.config.ts < per-call options), threaded through so the trace
+ * dir, retry knobs, and redaction toggle reflect what the user actually
+ * configured. Test fakes that ignore config (the simple smoke that uses
+ * `new HookDispatcher()`) can drop the argument.
  */
-type DispatcherFactory = (ctx: DispatcherFactoryContext) => HookDispatcher;
+type DispatcherFactory = (ctx: DispatcherFactoryContext, config: LimnConfig) => HookDispatcher;
 
 /**
  * Build the production dispatcher for a single call. Composes the hook
@@ -123,7 +166,8 @@ export function buildDefaultDispatcher(
   });
 }
 
-const defaultDispatcherFactory: DispatcherFactory = (ctx) => buildDefaultDispatcher(ctx);
+const defaultDispatcherFactory: DispatcherFactory = (ctx, config) =>
+  buildDefaultDispatcher(ctx, config);
 
 let currentDispatcherFactory: DispatcherFactory = defaultDispatcherFactory;
 
@@ -215,9 +259,10 @@ export const ai: Ai = {
     maybeOptions?: AskOptions,
   ): Promise<string> {
     const { context, options } = normalizeAskArgs(contextOrOptions, maybeOptions);
-    const model = options?.model ?? DEFAULT_CONFIG.defaultModel;
+    const config = resolveCallConfig(options);
+    const model = config.defaultModel;
     const providerName = providerFor(model);
-    const provider = getProvider(providerName);
+    const provider = resolveProvider(providerName, options?.apiKey);
 
     const messages = buildAskMessages(prompt, context);
     const baseRequest: ProviderRequest = {
@@ -226,19 +271,22 @@ export const ai: Ai = {
       ...(options?.system === undefined ? {} : { system: options.system }),
       ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
       ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
-      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      timeoutMs: config.timeoutMs,
       ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
     };
 
     const traceId = newTraceId();
     const state: TraceState = { id: traceId, redactedFields: [] };
-    const dispatcher = currentDispatcherFactory({
-      state,
-      kind: "ask",
-      model,
-      provider: providerName,
-      request: baseRequest,
-    });
+    const dispatcher = currentDispatcherFactory(
+      {
+        state,
+        kind: "ask",
+        model,
+        provider: providerName,
+        request: baseRequest,
+      },
+      config,
+    );
     const result = await dispatcher.run(
       {
         traceId,
@@ -259,9 +307,10 @@ export const ai: Ai = {
   },
 
   async chat(messages, options) {
-    const model = options?.model ?? DEFAULT_CONFIG.defaultModel;
+    const config = resolveCallConfig(options);
+    const model = config.defaultModel;
     const providerName = providerFor(model);
-    const provider = getProvider(providerName);
+    const provider = resolveProvider(providerName, options?.apiKey);
 
     const { system, userMessages } = splitChatMessages(messages, options?.system);
     const baseRequest: ProviderRequest = {
@@ -270,19 +319,22 @@ export const ai: Ai = {
       ...(system === undefined ? {} : { system }),
       ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
       ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
-      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      timeoutMs: config.timeoutMs,
       ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
     };
 
     const traceId = newTraceId();
     const state: TraceState = { id: traceId, redactedFields: [] };
-    const dispatcher = currentDispatcherFactory({
-      state,
-      kind: "chat",
-      model,
-      provider: providerName,
-      request: baseRequest,
-    });
+    const dispatcher = currentDispatcherFactory(
+      {
+        state,
+        kind: "chat",
+        model,
+        provider: providerName,
+        request: baseRequest,
+      },
+      config,
+    );
     const result = await dispatcher.run(
       {
         traceId,
@@ -303,9 +355,10 @@ export const ai: Ai = {
   },
 
   async extract(schema, input, options) {
-    const model = options?.model ?? DEFAULT_CONFIG.defaultModel;
+    const config = resolveCallConfig(options);
+    const model = config.defaultModel;
     const providerName = providerFor(model);
-    const provider = getProvider(providerName);
+    const provider = resolveProvider(providerName, options?.apiKey);
 
     // Each chat call inside the extract flow shares the same per-call
     // dispatcher kind ("extract") so the trace records the orchestration's
@@ -321,18 +374,21 @@ export const ai: Ai = {
         ...(system === undefined ? {} : { system }),
         ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
         ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
-        ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        timeoutMs: config.timeoutMs,
         ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
       };
       const traceId = newTraceId();
       const state: TraceState = { id: traceId, redactedFields: [] };
-      const dispatcher = currentDispatcherFactory({
-        state,
-        kind: "extract",
-        model,
-        provider: providerName,
-        request: baseRequest,
-      });
+      const dispatcher = currentDispatcherFactory(
+        {
+          state,
+          kind: "extract",
+          model,
+          provider: providerName,
+          request: baseRequest,
+        },
+        config,
+      );
       const result = await dispatcher.run({ traceId, model, messages: userMessages }, async () => {
         const response = await provider.request(baseRequest);
         return {
@@ -352,9 +408,10 @@ export const ai: Ai = {
   },
 
   stream(prompt, options) {
-    const model = options?.model ?? DEFAULT_CONFIG.defaultModel;
+    const config = resolveCallConfig(options);
+    const model = config.defaultModel;
     const providerName = providerFor(model);
-    const provider = getProvider(providerName);
+    const provider = resolveProvider(providerName, options?.apiKey);
 
     const messages = buildAskMessages(prompt);
     const baseRequest: ProviderRequest = {
@@ -362,19 +419,22 @@ export const ai: Ai = {
       messages,
       ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
       ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
-      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      timeoutMs: config.timeoutMs,
       ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
     };
 
     const traceId = newTraceId();
     const state: TraceState = { id: traceId, redactedFields: [] };
-    const dispatcher = currentDispatcherFactory({
-      state,
-      kind: "stream",
-      model,
-      provider: providerName,
-      request: baseRequest,
-    });
+    const dispatcher = currentDispatcherFactory(
+      {
+        state,
+        kind: "stream",
+        model,
+        provider: providerName,
+        request: baseRequest,
+      },
+      config,
+    );
     const onChunk = options?.onChunk;
 
     // Wrap the dispatcher's runStream so we can fire `onChunk` per chunk

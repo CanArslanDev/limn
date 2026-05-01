@@ -117,7 +117,24 @@ The tool factory. See [Agents and tools](agents.md).
 
 ## `defineConfig(config) -> LimnUserConfig`
 
-Identity helper for `limn.config.ts`. Lets you get full IntelliSense without manually annotating the type.
+Identity helper for `limn.config.{ts,mts,js,mjs,cjs}`. Returns its argument unchanged; the value of the helper is the IntelliSense it gives consumers without forcing them to import and annotate the `LimnUserConfig` type by hand.
+
+`LimnUserConfig` is exported from the package root for users who do prefer explicit annotation:
+
+```ts
+import type { LimnUserConfig } from "limn";
+
+const cfg: LimnUserConfig = {
+  defaultModel: "claude-sonnet-4-6",
+  retry: { maxAttempts: 5 },
+};
+```
+
+Every field is optional and nested groups (`retry`, `trace`) accept partials, so callers can override one knob without restating its siblings. The full resolution chain (defaults < env < `limn.config.*` < per-call) is documented in [Getting started](getting-started.md#project-configuration).
+
+### Per-call `apiKey` override
+
+Every Layer 1 option shape (`AskOptions`, `ChatOptions`, `ExtractOptions`, `StreamOptions`) accepts an `apiKey` field. When supplied it takes precedence over the environment variable AND any provider previously registered via `registerProvider(...)`; the client constructs a fresh adapter for that single call without mutating the registry. Useful for multi-tenant deployments. The trace pipeline scrubs API-key substrings out of every persisted record so the override never lands on disk.
 
 ## Errors
 

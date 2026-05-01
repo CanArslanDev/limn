@@ -118,3 +118,26 @@ export class ToolExecutionError extends LimnError {
     super(message, cause);
   }
 }
+
+/**
+ * A `limn.config.<ts|js|cjs|mjs>` file was found at the project root but
+ * failed to load (syntax error, import error, runtime throw inside the
+ * module). Carries the absolute path to the offending config file so users
+ * (and the eventual inspector UI) can jump straight to it. The original
+ * error lives on `cause`.
+ *
+ * Recovery: fix the syntax/import error in the named file, or move/rename
+ * the file (e.g. `limn.config.ts.bak`) to disable discovery temporarily so
+ * the rest of the application can run while debugging.
+ */
+export class ConfigLoadError extends LimnError {
+  public readonly code = "CONFIG_LOAD" as const;
+
+  public constructor(
+    message: string,
+    public readonly configPath: string,
+    cause?: unknown,
+  ) {
+    super(message, cause);
+  }
+}

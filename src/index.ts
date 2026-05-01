@@ -43,6 +43,7 @@ export {
 
 export {
   AuthError,
+  ConfigLoadError,
   LimnError,
   ModelTimeoutError,
   ProviderError,
@@ -50,3 +51,5 @@ export {
   SchemaValidationError,
   ToolExecutionError,
 } from "./errors/index.js";
+
+export type { LimnUserConfig } from "./config/define_config.js";

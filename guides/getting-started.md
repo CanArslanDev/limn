@@ -101,7 +101,7 @@ Trace files are local-only. Limn never sends them anywhere; the inspector
 
 ## Project configuration
 
-For project-wide overrides, create `limn.config.ts` at your project root:
+For project-wide overrides, create `limn.config.ts` (or `.js`, `.mjs`, `.cjs`) at your project root:
 
 ```ts
 import { defineConfig } from "limn";
@@ -114,15 +114,46 @@ export default defineConfig({
 });
 ```
 
+Limn discovers the file via `node:module.createRequire` from the current working directory. The first match wins in this extension order: `.ts`, `.mts`, `.js`, `.mjs`, `.cjs`. The result is cached for the process lifetime so a long-running server reads the file exactly once.
+
+TypeScript configs (`.ts`, `.mts`) require a runtime that understands TypeScript: `tsx`, `ts-node`, or Node 22+ with `--experimental-strip-types`. Without such a loader Node raises a `SyntaxError` and Limn surfaces it as a `ConfigLoadError` carrying the absolute path. If your runtime does not have a TypeScript loader, ship `limn.config.js` instead and annotate it via JSDoc:
+
+```js
+// limn.config.js
+import { defineConfig } from "limn";
+
+/** @type {import("limn").LimnUserConfig} */
+export default defineConfig({
+  defaultModel: "claude-opus-4-7",
+  trace: { dir: ".limn/traces" },
+});
+```
+
+Nested groups (`retry`, `trace`) accept partials: setting `{ retry: { maxAttempts: 5 } }` overrides only that knob and inherits `backoff` and `initialDelayMs` from the lower layer.
+
 Resolution order (later overrides earlier):
 
 1. Built-in defaults.
-2. Environment variables.
-3. `limn.config.ts`.
+2. Environment variables (currently `LIMN_TRACE_DIR`; provider keys `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` are read by the registry directly, not by the config layer).
+3. `limn.config.ts` (or `.js` / `.mjs` / `.cjs`) at the project root.
 4. Per-agent options (`ai.agent({ ... })`).
 5. Per-call options (`ai.ask(prompt, { ... })`).
 
+Concrete example: `defaultModel` in the call beats `defaultModel` in the file beats `defaultModel` from the env beats the built-in `claude-sonnet-4-6` default. `trace.dir` from the file overrides the env-var override which in turn overrides the `.limn/traces` default. Higher layers do NOT need to repeat lower-layer fields; absent fields fall through.
+
 Most users only touch the first three layers.
+
+### Per-call API key override
+
+Every Layer 1 option shape (`AskOptions`, `ChatOptions`, `ExtractOptions`, `StreamOptions`) accepts an `apiKey` field that takes precedence over the environment variable AND any provider previously registered via `registerProvider(...)`:
+
+```ts
+const summary = await ai.ask("Summarize this:", longText, {
+  apiKey: process.env.TENANT_KEY,
+});
+```
+
+The canonical use case is multi-tenant deployment: a single server handles requests from many end-users, each authenticating as a different tenant. Passing the per-tenant key on the call rather than mutating the registry keeps tenants isolated; the client constructs a fresh adapter for THIS call only and does not persist the key anywhere. The trace pipeline scrubs API-key substrings out of every persisted request and response, so the override never lands on disk.
 
 ## Retries and rate limits
 

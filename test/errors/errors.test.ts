@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AuthError,
+  ConfigLoadError,
   LimnError,
   ModelTimeoutError,
   ProviderError,
@@ -24,6 +25,7 @@ describe("error hierarchy", () => {
       new ModelTimeoutError("timed out", 30_000),
       new SchemaValidationError("schema mismatch", "Person", { foo: 1 }),
       new ToolExecutionError("tool boom", "search", { query: "x" }),
+      new ConfigLoadError("config bad", "/abs/path/limn.config.ts"),
     ];
 
     const codes = new Set(variants.map((v) => v.code));
@@ -49,5 +51,14 @@ describe("error hierarchy", () => {
     const err = new ToolExecutionError("boom", "search", { query: "rlhf" });
     expect(err.toolName).toBe("search");
     expect(err.toolInput).toEqual({ query: "rlhf" });
+  });
+
+  it("ConfigLoadError carries the offending path and a typed code", () => {
+    const path = "/abs/path/limn.config.ts";
+    const cause = new SyntaxError("Unexpected token");
+    const err = new ConfigLoadError("Failed to load config", path, cause);
+    expect(err.code).toBe("CONFIG_LOAD");
+    expect(err.configPath).toBe(path);
+    expect(err.cause).toBe(cause);
   });
 });

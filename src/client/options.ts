@@ -75,6 +75,20 @@ interface BaseCallOptions {
    * and never encodes anything by hand.
    */
   readonly attachments?: readonly Attachment[];
+  /**
+   * Per-call API key override. Takes precedence over the environment
+   * variable and any provider previously registered via
+   * `registerProvider(...)`. The client constructs a fresh adapter for
+   * THIS call only (the registry's cached provider is untouched), so the
+   * key never leaks into adjacent calls or future calls. The trace
+   * pipeline never persists the key (the redactor scrubs `sk-ant-` /
+   * `sk-proj-` / `sk-` substrings from the request and response).
+   *
+   * The canonical use case is multi-tenant deployment where each request
+   * authenticates as a different end-user; passing the per-tenant key on
+   * the call rather than mutating the registry keeps tenants isolated.
+   */
+  readonly apiKey?: string;
 }
 
 export interface AskOptions extends BaseCallOptions {

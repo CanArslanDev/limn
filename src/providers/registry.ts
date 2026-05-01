@@ -106,3 +106,28 @@ function envVarFor(name: ProviderName): string {
 export function unregisterProvider(name: ProviderName): void {
   _providers.delete(name);
 }
+
+/**
+ * Resolve a provider for one call. When `perCallApiKey` is supplied,
+ * construct a fresh adapter instance carrying that key and return it
+ * WITHOUT touching the cached registry slot - so the override applies to
+ * exactly this call and adjacent calls keep using the registered (or
+ * lazily-bootstrapped) provider untouched.
+ *
+ * The fresh-instance behavior is the load-bearing piece for multi-tenant
+ * deployments: a server handling concurrent requests from different
+ * tenants can pass each tenant's key on the call without racing on a
+ * shared mutable registry slot.
+ *
+ * Without `perCallApiKey` this delegates to {@link getProvider}, preserving
+ * the lazy-bootstrap behavior end-to-end.
+ */
+export function resolveProvider(name: ProviderName, perCallApiKey?: string): Provider {
+  if (perCallApiKey === undefined) return getProvider(name);
+  switch (name) {
+    case "anthropic":
+      return new AnthropicProvider({ apiKey: perCallApiKey });
+    case "openai":
+      return new OpenAIProvider({ apiKey: perCallApiKey });
+  }
+}
