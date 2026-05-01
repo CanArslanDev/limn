@@ -23,8 +23,10 @@
  *     Zod error message; one attempt is the documented cap.
  *   - `expectedSchemaName` is read from `schema.description` (set via
  *     `schema.describe("Person")`) when present; otherwise it falls back
- *     to the typeName from `_def`, then to `"Schema"`. The inspector
- *     surfaces this so users can correlate failures with their schemas.
+ *     to the literal `"Schema"`. The inspector surfaces this so users can
+ *     correlate failures with their schemas. Zod's internal `_def.typeName`
+ *     is intentionally NOT a fallback - leaking `"ZodObject"` into the
+ *     user-facing error is worse than a generic `"Schema"`.
  */
 
 import type { z } from "zod";
@@ -86,6 +88,14 @@ export async function runExtract<T>(
   // One retry: feed the model its own output plus the validation problem.
   // The corrective user message names the schema and the Zod error so the
   // model knows what to fix.
+  //
+  // TODO(phase-2): linkage between sibling extract attempts. Today retry
+  // produces two trace files with no parent/sibling pointer; the inspector
+  // will need a `parentTraceId` or new `extractAttemptOf` field to group
+  // them under one logical ai.extract call. The TraceRecord schema already
+  // declares an optional `parentTraceId` for Phase 3 agent linkage; the
+  // extract flow can adopt the same field once the inspector contract is
+  // pinned.
   const retryMessages: readonly ChatMessage[] = [
     ...firstMessages,
     { role: "assistant", content: firstResponse },
@@ -127,15 +137,20 @@ function buildSystemPrompt(jsonSchema: JsonSchema): string {
 /**
  * Extract a human-readable name for the schema. Prefers `schema.description`
  * (set via `schema.describe("Person")`) so users can pin a name; falls back
- * to the Zod type name from `_def.typeName` (e.g. `"ZodObject"`); ultimately
- * defaults to `"Schema"`.
+ * to the literal `"Schema"` otherwise.
+ *
+ * Why no Zod-internal fallback: the previous implementation used
+ * `_def.typeName` (e.g. `"ZodObject"`) as a middle tier, but that leaks a
+ * Zod implementation detail into both the user-facing error message and the
+ * persisted trace. A user who never called `.describe(...)` should see a
+ * neutral `"Schema"` and know the fix is to add a description, not to
+ * decode Zod's class names.
  */
 function describeSchemaName(schema: unknown): string {
-  const def = (schema as { _def?: { typeName?: string; description?: string } })._def;
-  if (def === undefined) return "Schema";
+  const def = (schema as { _def?: { description?: string } })._def;
   // `.describe("Person")` lands on `_def.description` in Zod 3.
+  if (def === undefined) return "Schema";
   if (typeof def.description === "string" && def.description.length > 0) return def.description;
-  if (typeof def.typeName === "string") return def.typeName;
   return "Schema";
 }
 
@@ -159,10 +174,18 @@ function tryParseJson(raw: string): unknown {
  * fence, if both are present. No-op when there is no fence; no-op when only
  * one side has a fence (a malformed response is the user's problem to
  * surface, not ours to silently coerce).
+ *
+ * The opening-fence regex tolerates either form: a multi-line fence with a
+ * trailing newline (`` ```json\n{...}\n``` ``) and a single-line fence with
+ * no separator between the language tag and the payload
+ * (`` ```json{...}``` ``). Models occasionally emit the latter despite the
+ * "no fences" instruction; without this tolerance the JSON.parse below
+ * would silently swallow the fence as part of the input and the user would
+ * see `actualPayload: null` in the trace.
  */
 function stripCodeFence(raw: string): string {
   const trimmed = raw.trim();
-  const openFence = trimmed.match(/^```(?:json)?\s*\n/);
+  const openFence = trimmed.match(/^```(?:json)?\s*/);
   if (openFence === null) return raw;
   const withoutOpen = trimmed.slice(openFence[0].length);
   const closeIdx = withoutOpen.lastIndexOf("```");

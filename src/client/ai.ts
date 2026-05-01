@@ -183,9 +183,11 @@ function buildAskMessages(prompt: string, context?: string): readonly ProviderCh
  * Resolution rule (matches `ChatOptions.system`'s JSDoc): when an in-array
  * system message is present it wins over `optionsSystem`. The first
  * in-array system message's content is taken; subsequent system messages
- * are filtered out (their content is dropped, not concatenated). This keeps
- * the contract simple: "system message" is single-valued at the provider
- * level, regardless of how many appear in the input array.
+ * are silently dropped - no warning, no concatenation. This keeps the
+ * contract simple: "system message" is single-valued at the provider
+ * level, regardless of how many appear in the input array. The pinning
+ * test lives in `test/integration/chat_smoke.test.ts` so a future
+ * refactor cannot accidentally start concatenating.
  */
 function splitChatMessages(
   messages: readonly ChatMessage[],

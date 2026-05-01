@@ -108,6 +108,29 @@ describe("ai.chat smoke (MockProvider)", () => {
     expect(captured?.messages).toEqual([{ role: "user", content: "hi" }]);
   });
 
+  it("when the messages array has multiple role:'system' entries, the first wins; subsequent are dropped", async () => {
+    mock.pushResponse({
+      content: "ok",
+      toolCalls: [],
+      stopReason: "end",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    await ai.chat([
+      { role: "system", content: "first system instruction" },
+      { role: "user", content: "hello" },
+      { role: "system", content: "second system instruction (should be dropped)" },
+      { role: "user", content: "follow-up" },
+    ]);
+
+    const req = mock.requests[0];
+    expect(req?.system).toBe("first system instruction");
+    expect(req?.messages.map((m) => ({ role: m.role, content: m.content }))).toEqual([
+      { role: "user", content: "hello" },
+      { role: "user", content: "follow-up" },
+    ]);
+  });
+
   it("forwards a multi-turn conversation verbatim when no system is present", async () => {
     mock.pushResponse({
       content: "third reply",

@@ -63,6 +63,32 @@ describe("ai.extract smoke (MockProvider)", () => {
     expect(captured?.messages).toEqual([{ role: "user", content: "extract person from: ..." }]);
   });
 
+  it("tolerates a single-line ```json fence without trailing newline", async () => {
+    mock.pushResponse({
+      content: '```json{"name":"Ada","age":36}```',
+      toolCalls: [],
+      stopReason: "end",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const Person = z.object({ name: z.string(), age: z.number() });
+    const result = await ai.extract(Person, "extract person from: ...");
+    expect(result).toEqual({ name: "Ada", age: 36 });
+  });
+
+  it("tolerates a multi-line ```json fence with trailing newline", async () => {
+    mock.pushResponse({
+      content: '```json\n{"name":"Ada","age":36}\n```',
+      toolCalls: [],
+      stopReason: "end",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    const Person = z.object({ name: z.string(), age: z.number() });
+    const result = await ai.extract(Person, "extract person from: ...");
+    expect(result).toEqual({ name: "Ada", age: 36 });
+  });
+
   it("throws SchemaValidationError when the model emits invalid JSON", async () => {
     mock.pushResponse({
       content: "this is not json",
@@ -94,8 +120,28 @@ describe("ai.extract smoke (MockProvider)", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(SchemaValidationError);
       const sve = err as SchemaValidationError;
-      expect(sve.expectedSchemaName).toBeDefined();
+      // No `.describe(...)` was supplied, so the name falls through to the
+      // neutral literal. Zod's internal typeName ("ZodObject") must not
+      // leak into the user-facing error.
+      expect(sve.expectedSchemaName).toBe("Schema");
       expect(sve.actualPayload).toEqual({ name: "Ada" });
+    }
+  });
+
+  it("uses the schema's .describe() label as expectedSchemaName", async () => {
+    mock.pushResponse({
+      content: "not json at all",
+      toolCalls: [],
+      stopReason: "end",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    try {
+      await ai.extract(z.object({ name: z.string() }).describe("Person"), "...");
+      throw new Error("expected ai.extract to reject");
+    } catch (err) {
+      expect(err).toBeInstanceOf(SchemaValidationError);
+      expect((err as SchemaValidationError).expectedSchemaName).toBe("Person");
     }
   });
 
@@ -119,10 +165,14 @@ describe("ai.extract smoke (MockProvider)", () => {
     expect(result).toEqual({ name: "Bob", age: 42 });
     expect(mock.requests).toHaveLength(2);
     // The second request includes corrective feedback referencing the prior
-    // failure; the message array grows by at least one assistant + user pair.
+    // failure; the message array grows by at least one assistant + user pair
+    // and the trailing user message names the validation problem so the
+    // model knows what to fix. Asserting on the corrective wording catches
+    // a regression where retry sends a non-corrective second prompt.
     const second = mock.requests[1];
     expect(second).toBeDefined();
     expect(second?.messages.length ?? 0).toBeGreaterThan(1);
+    expect(second?.messages.at(-1)?.content).toContain("Validation error");
   });
 
   it("throws SchemaValidationError when both attempts fail with retryOnSchemaFailure:true", async () => {

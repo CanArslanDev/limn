@@ -209,5 +209,8 @@ All notable changes to this project are documented here. Format follows
 
 - Pre-1.0. Public API is in active design; expect breaking changes between
   every minor release until the v1.0.0 stability commitment.
+- `ai.extract(retryOnSchemaFailure: true)` produces two independent trace
+  records (one per chat attempt). Inspector linkage between sibling
+  attempts is deferred to Phase 2.
 
 [Unreleased]: https://github.com/CanArslanDev/limn/compare/HEAD...HEAD

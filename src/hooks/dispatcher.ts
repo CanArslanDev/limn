@@ -212,6 +212,11 @@ export class HookDispatcher {
    * caller bug (would re-fire the dispatcher entirely). This mirrors the
    * SDK-level streaming iterators.
    */
+  // TODO(future polish): runStream and run share substantial lifecycle
+  // logic (attempt counter, context-strip, retry-decide-and-sleep).
+  // Consider extracting a shared inner-core when a third dispatcher
+  // variant is needed (Phase 3 agent loop is the likely third caller).
+  // Until then YAGNI per CLAUDE.md section 9.1.
   public async *runStream(
     initialCtx: Omit<HookContext, "attempt" | "response" | "error">,
     exec: (attempt: number) => {
@@ -233,10 +238,18 @@ export class HookDispatcher {
           await this.fire("onRetry", ctx);
         }
         const { stream, finalize } = exec(attempt);
-        // Attach a no-op catch handler to `finalize` immediately so a
-        // rejection (mid-stream error path; we never `await finalize` in
-        // that case) does not surface as an unhandled promise rejection.
-        // The user-facing error still propagates through the iterator.
+        // Unconditional catch handler attached before iteration: the
+        // success path will await `finalize` and observe its rejection
+        // naturally (the no-op handler does not interfere because the
+        // await sees a fresh handle). On the first-chunk-error and
+        // mid-stream-error paths we never await `finalize`, so without
+        // this handler a rejection would surface as an unhandled promise
+        // rejection on the next tick. The user-facing error still
+        // propagates through the iterator; this handler is purely for
+        // suppressing the unhandled-rejection warning on the non-await
+        // paths. Attaching it eagerly (rather than conditionally inside
+        // the catch) is robust against the rejection landing before we
+        // reach the conditional.
         finalize.catch(() => {
           // intentional swallow; the iterator carries the user-facing error
         });
