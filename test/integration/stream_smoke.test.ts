@@ -14,7 +14,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { __setDispatcherFactoryForTests, ai } from "../../src/client/ai.js";
-import { DEFAULT_CONFIG } from "../../src/config/limn_config.js";
+import { DEFAULT_CONFIG } from "../../src/config/traceworks_config.js";
 import { ProviderError, RateLimitError } from "../../src/errors/index.js";
 import { HookDispatcher } from "../../src/hooks/dispatcher.js";
 import { ExponentialBackoffStrategy } from "../../src/hooks/retry_strategy.js";

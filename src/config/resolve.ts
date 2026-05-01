@@ -1,18 +1,18 @@
 /**
- * Configuration resolution chain. Merges four `LimnUserConfig` partials in
- * precedence order (defaults < env < limn.config.ts < per-call options) into
- * one fully-resolved `LimnConfig` with no optional fields.
+ * Configuration resolution chain. Merges four `TraceworksUserConfig` partials in
+ * precedence order (defaults < env < traceworks.config.ts < per-call options) into
+ * one fully-resolved `TraceworksConfig` with no optional fields.
  *
  * Per-call API key override is intentionally NOT part of this chain: the
- * key is per-provider, not LimnConfig-shaped. The client picks it up from
+ * key is per-provider, not TraceworksConfig-shaped. The client picks it up from
  * `BaseCallOptions.apiKey` and routes it through `resolveProvider` in the
- * registry. Keeping the key out of `LimnConfig` also avoids accidental
- * persistence into trace records (the trace pipeline only sees `LimnConfig`,
+ * registry. Keeping the key out of `TraceworksConfig` also avoids accidental
+ * persistence into trace records (the trace pipeline only sees `TraceworksConfig`,
  * never per-call API keys).
  */
 
-import type { LimnUserConfig } from "./define_config.js";
-import { DEFAULT_CONFIG, type LimnConfig } from "./limn_config.js";
+import type { TraceworksUserConfig } from "./define_config.js";
+import { DEFAULT_CONFIG, type TraceworksConfig } from "./traceworks_config.js";
 
 /**
  * The four resolution layers, top-down (highest precedence first when read,
@@ -24,25 +24,25 @@ import { DEFAULT_CONFIG, type LimnConfig } from "./limn_config.js";
  */
 export interface ResolveLayers {
   /** Lifted from `process.env`. See {@link envOverridesFromProcess}. */
-  readonly envOverrides?: LimnUserConfig | undefined;
-  /** Loaded from `limn.config.{ts,js,cjs,mjs}`. See `loadProjectConfig`. */
-  readonly fileConfig?: LimnUserConfig | undefined;
-  /** Per-call options lifted into LimnConfig shape. */
-  readonly callOverrides?: LimnUserConfig | undefined;
+  readonly envOverrides?: TraceworksUserConfig | undefined;
+  /** Loaded from `traceworks.config.{ts,js,cjs,mjs}`. See `loadProjectConfig`. */
+  readonly fileConfig?: TraceworksUserConfig | undefined;
+  /** Per-call options lifted into TraceworksConfig shape. */
+  readonly callOverrides?: TraceworksUserConfig | undefined;
 }
 
 /**
- * Merge layers into a fully-resolved `LimnConfig`. Higher layers override
+ * Merge layers into a fully-resolved `TraceworksConfig`. Higher layers override
  * lower layers field-by-field; nested groups (`retry`, `trace`) merge per
  * sub-field rather than wholesale, so `{ retry: { maxAttempts: 5 } }` only
  * overrides that one knob and inherits the rest from the lower layer.
  *
  * The implementation reads as a flat ladder of `??` chains (highest first),
  * which mirrors the precedence order at the call site. A future field added
- * to `LimnConfig` requires one more line here; the explicit ladder is more
+ * to `TraceworksConfig` requires one more line here; the explicit ladder is more
  * scannable than a recursive deep-merge that hides which fields exist.
  */
-export function resolveConfig(layers: ResolveLayers): LimnConfig {
+export function resolveConfig(layers: ResolveLayers): TraceworksConfig {
   const env = layers.envOverrides ?? {};
   const file = layers.fileConfig ?? {};
   const call = layers.callOverrides ?? {};
@@ -84,20 +84,20 @@ export function resolveConfig(layers: ResolveLayers): LimnConfig {
 }
 
 /**
- * Lift documented Limn env vars into a `LimnUserConfig` partial. Today only
- * `LIMN_TRACE_DIR` is recognized (per CLAUDE.md section 13.7's canonical
- * example). Unrecognized `LIMN_*` vars are intentionally NOT promoted so
+ * Lift documented Traceworks env vars into a `TraceworksUserConfig` partial. Today only
+ * `TRACEWORKS_TRACE_DIR` is recognized (per CLAUDE.md section 13.7's canonical
+ * example). Unrecognized `TRACEWORKS_*` vars are intentionally NOT promoted so
  * the env surface stays explicit; new vars must add a switch arm here AND
  * land in `guides/getting-started.md` so the surface stays documented.
  *
  * Provider-specific keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) are NOT
  * lifted here because they belong to the provider boundary, not to
- * `LimnConfig`. The provider registry reads them directly during the lazy
+ * `TraceworksConfig`. The provider registry reads them directly during the lazy
  * bootstrap.
  */
-export function envOverridesFromProcess(): LimnUserConfig {
+export function envOverridesFromProcess(): TraceworksUserConfig {
   // biome-ignore lint/complexity/useLiteralKeys: process.env requires bracket notation under TS noPropertyAccessFromIndexSignature
-  const dir = process.env["LIMN_TRACE_DIR"];
+  const dir = process.env["TRACEWORKS_TRACE_DIR"];
   if (dir === undefined || dir === "") return {};
   return { trace: { dir } };
 }

@@ -77,7 +77,7 @@ export class FileSystemTraceSink implements TraceSink {
         const raw = await readFile(path, "utf8");
         out.push(JSON.parse(raw) as TraceRecord);
       } catch (err) {
-        console.warn(`[limn] failed to read trace file ${path}:`, err);
+        console.warn(`[traceworks] failed to read trace file ${path}:`, err);
       }
     }
     return out;

@@ -2,17 +2,17 @@
  * The `ai` namespace - Layer 1 entry point. All four members (`ask`, `chat`,
  * `extract`, `stream`) are wired against the `HookDispatcher` + provider
  * registry, with the four-layer config resolution chain (defaults < env <
- * `limn.config.*` < per-call options) honored on every call as of batch
+ * `traceworks.config.*` < per-call options) honored on every call as of batch
  * 1.8; `agent` (Layer 2) lands in Phase 3.
  */
 
 import type { z } from "zod";
 import { agent } from "../agent/agent.js";
 import type { ChatMessage as ProviderChatMessage } from "../client/options.js";
-import type { LimnUserConfig } from "../config/define_config.js";
-import { DEFAULT_CONFIG, type LimnConfig } from "../config/limn_config.js";
+import type { TraceworksUserConfig } from "../config/define_config.js";
 import { loadProjectConfig } from "../config/load.js";
 import { envOverridesFromProcess, resolveConfig } from "../config/resolve.js";
+import { DEFAULT_CONFIG, type TraceworksConfig } from "../config/traceworks_config.js";
 import { runExtract } from "../extract/extract.js";
 import { type Hook, HookDispatcher, newTraceId } from "../hooks/dispatcher.js";
 import { RedactionHook } from "../hooks/redaction_hook.js";
@@ -33,9 +33,9 @@ import type {
 } from "./options.js";
 
 /**
- * Lift per-call options into the LimnUserConfig partial shape so they slot
- * into the resolution chain alongside env vars and `limn.config.ts`. Only
- * the fields that LimnConfig recognizes flow through; vendor-specific
+ * Lift per-call options into the TraceworksUserConfig partial shape so they slot
+ * into the resolution chain alongside env vars and `traceworks.config.ts`. Only
+ * the fields that TraceworksConfig recognizes flow through; vendor-specific
  * fields (system, attachments, apiKey, ...) stay on the call options and
  * are read directly by the entry points.
  */
@@ -43,8 +43,8 @@ function callOptionsToUserConfig(opts: {
   readonly model?: ModelName;
   readonly timeoutMs?: number;
   readonly maxRetries?: number;
-}): LimnUserConfig {
-  const out: { -readonly [K in keyof LimnUserConfig]: LimnUserConfig[K] } = {};
+}): TraceworksUserConfig {
+  const out: { -readonly [K in keyof TraceworksUserConfig]: TraceworksUserConfig[K] } = {};
   if (opts.model !== undefined) out.defaultModel = opts.model;
   if (opts.timeoutMs !== undefined) out.timeoutMs = opts.timeoutMs;
   if (opts.maxRetries !== undefined) out.retry = { maxAttempts: opts.maxRetries };
@@ -52,8 +52,8 @@ function callOptionsToUserConfig(opts: {
 }
 
 /**
- * Resolve the effective `LimnConfig` for one call by walking the four
- * layers (defaults < env < limn.config.ts < per-call options) in
+ * Resolve the effective `TraceworksConfig` for one call by walking the four
+ * layers (defaults < env < traceworks.config.ts < per-call options) in
  * precedence order. Pulled into a helper because all four `ai.*` entry
  * points need the identical resolution; inlining it would invite drift.
  */
@@ -61,7 +61,7 @@ function resolveCallConfig(opts?: {
   readonly model?: ModelName;
   readonly timeoutMs?: number;
   readonly maxRetries?: number;
-}): LimnConfig {
+}): TraceworksConfig {
   return resolveConfig({
     envOverrides: envOverridesFromProcess(),
     fileConfig: loadProjectConfig(),
@@ -96,7 +96,7 @@ export interface Ai {
  * Cross-call values (sink, retry strategy, resolved config) live on the
  * factory closure. {@link buildDefaultDispatcher} bridges the two.
  *
- * @internal not part of the public surface; do not import from `limn`.
+ * @internal not part of the public surface; do not import from `traceworks`.
  *   Prefer constructing your own `HookDispatcher` if you need custom wiring.
  */
 export interface DispatcherFactoryContext {
@@ -110,19 +110,22 @@ export interface DispatcherFactoryContext {
 /**
  * Factory that builds the dispatcher used by every public `ai.*` call. The
  * default wires the production retry strategy (exponential backoff against
- * the resolved `LimnConfig.retry`) and the production trace + redaction
- * hooks (writing to the resolved `LimnConfig.trace.dir`). Tests replace
+ * the resolved `TraceworksConfig.retry`) and the production trace + redaction
+ * hooks (writing to the resolved `TraceworksConfig.trace.dir`). Tests replace
  * the factory via {@link __setDispatcherFactoryForTests} to inject a
  * recording `sleepFn`, swap the sink for a recording one, or pin
- * `LimnConfig.trace.dir` to an isolated tmp directory.
+ * `TraceworksConfig.trace.dir` to an isolated tmp directory.
  *
- * The second argument is the per-call resolved `LimnConfig` (defaults <
- * env < limn.config.ts < per-call options), threaded through so the trace
+ * The second argument is the per-call resolved `TraceworksConfig` (defaults <
+ * env < traceworks.config.ts < per-call options), threaded through so the trace
  * dir, retry knobs, and redaction toggle reflect what the user actually
  * configured. Test fakes that ignore config (the simple smoke that uses
  * `new HookDispatcher()`) can drop the argument.
  */
-type DispatcherFactory = (ctx: DispatcherFactoryContext, config: LimnConfig) => HookDispatcher;
+type DispatcherFactory = (
+  ctx: DispatcherFactoryContext,
+  config: TraceworksConfig,
+) => HookDispatcher;
 
 /**
  * Build the production dispatcher for a single call. Composes the hook
@@ -130,16 +133,16 @@ type DispatcherFactory = (ctx: DispatcherFactoryContext, config: LimnConfig) => 
  * shape), the exponential-backoff retry strategy, and the configured
  * sink. `config` defaults to `DEFAULT_CONFIG`; the integration smoke
  * passes a config pinned to a tmp directory so its trace files do not
- * land in the project's `.limn/`.
+ * land in the project's `.traceworks/`.
  *
- * @internal not part of the public surface; do not import from `limn`.
+ * @internal not part of the public surface; do not import from `traceworks`.
  *   Used by the default dispatcher factory and by integration tests that
  *   need to override the trace dir. Construct your own `HookDispatcher`
  *   directly if you need custom wiring.
  */
 export function buildDefaultDispatcher(
   ctx: DispatcherFactoryContext,
-  config: LimnConfig = DEFAULT_CONFIG,
+  config: TraceworksConfig = DEFAULT_CONFIG,
 ): HookDispatcher {
   const sink: TraceSink = config.trace.enabled
     ? new FileSystemTraceSink(config.trace.dir)

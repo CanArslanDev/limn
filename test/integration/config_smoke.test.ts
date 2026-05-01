@@ -1,6 +1,6 @@
 /**
  * End-to-end resolution-chain smoke. Drives `ai.ask` against a
- * MockProvider with a `limn.config.cjs` written to a tmp dir; asserts
+ * MockProvider with a `traceworks.config.cjs` written to a tmp dir; asserts
  * that the per-call trace lands in the directory the config file
  * specified, proving the file layer of the resolution chain takes
  * effect against the production wiring.
@@ -24,7 +24,7 @@ import { __resetConfigCacheForTests } from "../../src/config/load.js";
 import { MockProvider } from "../../src/providers/_mock/mock_provider.js";
 import { getProvider, registerProvider, unregisterProvider } from "../../src/providers/registry.js";
 
-describe("ai.ask + limn.config.cjs (resolution chain)", () => {
+describe("ai.ask + traceworks.config.cjs (resolution chain)", () => {
   let projectDir: string;
   let traceDir: string;
   let originalCwd: string;
@@ -35,8 +35,8 @@ describe("ai.ask + limn.config.cjs (resolution chain)", () => {
     originalCwd = process.cwd();
     // realpathSync resolves macOS's /var -> /private/var symlink so cwd
     // matches the path we pass to the config file.
-    projectDir = realpathSync(await mkdtemp(join(tmpdir(), "limn-cfg-int-")));
-    traceDir = realpathSync(await mkdtemp(join(tmpdir(), "limn-cfg-trace-")));
+    projectDir = realpathSync(await mkdtemp(join(tmpdir(), "traceworks-cfg-int-")));
+    traceDir = realpathSync(await mkdtemp(join(tmpdir(), "traceworks-cfg-trace-")));
     process.chdir(projectDir);
     __resetConfigCacheForTests();
 
@@ -62,12 +62,12 @@ describe("ai.ask + limn.config.cjs (resolution chain)", () => {
     await rm(traceDir, { recursive: true, force: true });
   });
 
-  it("honors trace.dir set by limn.config.cjs (file layer wins over default)", async () => {
+  it("honors trace.dir set by traceworks.config.cjs (file layer wins over default)", async () => {
     // Escape the path for embedding in the CommonJS source. Backslashes
     // would break on Windows; this test runs on POSIX-ish runners (CI is
     // Linux + macOS) but the JSON.stringify quoting is portable.
     const cfgSource = `module.exports = { trace: { dir: ${JSON.stringify(traceDir)} } };`;
-    await writeFile(join(projectDir, "limn.config.cjs"), cfgSource, "utf8");
+    await writeFile(join(projectDir, "traceworks.config.cjs"), cfgSource, "utf8");
 
     mock.pushResponse({
       content: "ok",
@@ -79,7 +79,7 @@ describe("ai.ask + limn.config.cjs (resolution chain)", () => {
     await ai.ask("hi");
 
     // Trace should land in the dir from the config file, NOT in
-    // .limn/traces (the DEFAULT_CONFIG fallback).
+    // .traceworks/traces (the DEFAULT_CONFIG fallback).
     const traces = (await readdir(traceDir)).filter((n) => n.endsWith(".json"));
     expect(traces).toHaveLength(1);
   });

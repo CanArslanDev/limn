@@ -14,6 +14,17 @@ All notable changes to this project are documented here. Format follows
 
 ## [0.1.0] - 2026-04-29 - layer 1 + anthropic + openai + minimal trace
 
+### Notes
+
+Released to npm as `traceworks`. The project was previously developed under
+the working name `limn`; the rename happened before the first npm publish.
+Internal identifiers (`LimnError` -> `TraceworksError`, `LimnConfig` ->
+`TraceworksConfig`, `LimnUserConfig` -> `TraceworksUserConfig`), the env var
+(`LIMN_TRACE_DIR` -> `TRACEWORKS_TRACE_DIR`), the project config file name
+(`limn.config.*` -> `traceworks.config.*`), the default trace directory
+(`.limn/traces/` -> `.traceworks/traces/`), and the CLI binary all carry the
+new name.
+
 ### Added
 
 - Repository scaffold: TypeScript project layout, `tsup` build, `vitest` test
@@ -26,7 +37,7 @@ All notable changes to this project are documented here. Format follows
   helper. Runtime behavior arrives in Phase 1.
 - `ai.ask()` now calls Anthropic end-to-end against `claude-sonnet-4-6` (default)
   when `ANTHROPIC_API_KEY` is set. Auth, rate-limit, transport, and timeout
-  errors map to typed `LimnError` subclasses (`AuthError`, `RateLimitError` with
+  errors map to typed `TraceworksError` subclasses (`AuthError`, `RateLimitError` with
   `retryAfterMs`, `ProviderError`, `ModelTimeoutError`). The provider registry
   lazy-bootstraps an `AnthropicProvider` from the env var on first use, so
   zero-config code Just Works.
@@ -62,7 +73,7 @@ All notable changes to this project are documented here. Format follows
   rethrows immediately on deterministic failures instead of burning attempts
   on requests that will fail the same way.
 - Trace pipeline: every `ai.ask` call now writes one JSON record to
-  `.limn/traces/<ulid>.json` via the new `FileSystemTraceSink`. Records
+  `.traceworks/traces/<ulid>.json` via the new `FileSystemTraceSink`. Records
   carry `id`, `timestamp`, `kind`, `model`, `provider`, `latencyMs`,
   `attempts`, `usage`, `request`, `response`, optional `error`, and a
   `redactedFields` array of dot-paths naming every field whose string
@@ -73,7 +84,7 @@ All notable changes to this project are documented here. Format follows
   replaces `sk-ant-`, `sk-proj-`, and `sk-` substrings (with at least 16
   trailing url-safe characters) with `[REDACTED]` in the persisted
   request, response, and error message. Opt out via
-  `trace.redactKeys: false` in `limn.config.ts`. Default-on so a key
+  `trace.redactKeys: false` in `traceworks.config.ts`. Default-on so a key
   smuggled through a prompt or echoed by an SDK error is never persisted
   in plain text.
 - `TraceHook` and `RedactionHook` ship as concrete `Hook` implementations
@@ -139,19 +150,19 @@ All notable changes to this project are documented here. Format follows
   `streamRequests`, and implements `requestStream` so integration tests
   drive `ai.stream` end-to-end without a network call.
 - Project config resolution: every Layer 1 call now resolves its
-  effective `LimnConfig` by walking four layers in precedence order
-  (defaults < env < `limn.config.*` < per-call options). The new
-  `loadProjectConfig` discovers `limn.config.{ts,mts,js,mjs,cjs}` at the
+  effective `TraceworksConfig` by walking four layers in precedence order
+  (defaults < env < `traceworks.config.*` < per-call options). The new
+  `loadProjectConfig` discovers `traceworks.config.{ts,mts,js,mjs,cjs}` at the
   current working directory via `node:module.createRequire`, caches the
   result for the process lifetime, and surfaces load failures as
   `ConfigLoadError` (new variant) carrying the absolute path. Nested
   groups (`retry`, `trace`) merge per sub-field rather than wholesale,
   so `{ retry: { maxAttempts: 5 } }` overrides only that knob and
-  inherits the rest. `LimnUserConfig` is now an explicit shape (rather
-  than `Partial<LimnConfig>`) so nested partials type-check, and is
+  inherits the rest. `TraceworksUserConfig` is now an explicit shape (rather
+  than `Partial<TraceworksConfig>`) so nested partials type-check, and is
   re-exported from the package root for direct annotation.
-- `LIMN_TRACE_DIR` env var now overrides `trace.dir` in the resolution
-  chain. Other `LIMN_*` vars are intentionally unrecognized: new env
+- `TRACEWORKS_TRACE_DIR` env var now overrides `trace.dir` in the resolution
+  chain. Other `TRACEWORKS_*` vars are intentionally unrecognized: new env
   surface must add a switch arm in `envOverridesFromProcess` AND
   document itself in `guides/getting-started.md` so the contract stays
   explicit.
@@ -164,7 +175,7 @@ All notable changes to this project are documented here. Format follows
   deployment: each request carries the tenant's key without racing on
   shared mutable state. The trace redactor scrubs the key out of the
   persisted request and response.
-- `ConfigLoadError` variant joins the `LimnError` hierarchy. Carries
+- `ConfigLoadError` variant joins the `TraceworksError` hierarchy. Carries
   the absolute path to the offending config file plus the original
   error on `cause`. Recovery: fix the syntax/import error, or rename
   the file to disable discovery while debugging.
@@ -206,8 +217,8 @@ All notable changes to this project are documented here. Format follows
   real HTTP status codes and the adapter's `instanceof` mapping is
   exercised against the real class hierarchy. Fixture files live in
   `test/fixtures/anthropic/` and document the mapping from status code
-  to `LimnError` variant. The SDK's built-in `maxRetries` is now set to
-  `0` from the adapter so retry policy stays under Limn's control.
+  to `TraceworksError` variant. The SDK's built-in `maxRetries` is now set to
+  `0` from the adapter so retry policy stays under Traceworks's control.
 - Anthropic adapter cached SDK state collapsed into a single atomic field;
   SDK-boundary cast narrowed to a structural method shape (no `any` left
   in the adapter); `AnthropicProvider` + `AnthropicProviderOptions` now
@@ -240,7 +251,7 @@ All notable changes to this project are documented here. Format follows
   no longer stack-overflows the trace pipeline. The cleaned tree mirrors
   the input's topology including cycles.
 - Trace sink-failure warning now includes the trace ID for correlation:
-  `[limn] trace sink "FileSystemTraceSink" failed to write trace
+  `[traceworks] trace sink "FileSystemTraceSink" failed to write trace
   trc_<uuid>: <error>`.
 - Removed dead `attempt` field from `TraceState`; `TraceHook.onCallEnd`
   now reads `ctx.attempt` directly from the dispatcher's `HookContext`,
@@ -254,5 +265,5 @@ All notable changes to this project are documented here. Format follows
   records (one per chat attempt). Inspector linkage between sibling
   attempts is deferred to Phase 2.
 
-[Unreleased]: https://github.com/CanArslanDev/limn/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/CanArslanDev/limn/releases/tag/v0.1.0
+[Unreleased]: https://github.com/CanArslanDev/traceworks/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/CanArslanDev/traceworks/releases/tag/v0.1.0

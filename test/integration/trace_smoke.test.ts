@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { __setDispatcherFactoryForTests, ai, buildDefaultDispatcher } from "../../src/client/ai.js";
-import { DEFAULT_CONFIG } from "../../src/config/limn_config.js";
+import { DEFAULT_CONFIG } from "../../src/config/traceworks_config.js";
 import { MockProvider } from "../../src/providers/_mock/mock_provider.js";
 import { getProvider, registerProvider, unregisterProvider } from "../../src/providers/registry.js";
 import type { TraceRecord } from "../../src/trace/trace.js";
@@ -30,7 +30,7 @@ describe("ai.ask trace integration (FileSystemTraceSink + RedactionHook)", () =>
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "limn-trace-int-"));
+    dir = await mkdtemp(join(tmpdir(), "traceworks-trace-int-"));
     try {
       previous = getProvider("anthropic");
     } catch {

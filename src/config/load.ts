@@ -1,6 +1,6 @@
 /**
  * Project-config discovery + load. Walks `process.cwd()` for the first
- * `limn.config.{ts,mts,js,mjs,cjs}` file and `require()`s it through
+ * `traceworks.config.{ts,mts,js,mjs,cjs}` file and `require()`s it through
  * `node:module.createRequire` so the user can author the config in
  * CommonJS or any format their runtime understands.
  *
@@ -27,23 +27,23 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import { ConfigLoadError } from "../errors/index.js";
-import type { LimnUserConfig } from "./define_config.js";
+import type { TraceworksUserConfig } from "./define_config.js";
 
 /**
  * Discovery order. Earlier entries win when multiple config files exist
- * (Limn warns rather than guessing - see TODO below). The order favors
+ * (Traceworks warns rather than guessing - see TODO below). The order favors
  * the formats most users author by hand: `.ts` first because TypeScript
  * users are the dominant consumer, then `.mts` for the same reason in an
  * ESM-heavy project, then the JavaScript fallbacks.
  */
 const CONFIG_EXTENSIONS = ["ts", "mts", "js", "mjs", "cjs"] as const;
 
-type CacheEntry = { readonly value: LimnUserConfig | undefined };
+type CacheEntry = { readonly value: TraceworksUserConfig | undefined };
 
 let cached: CacheEntry | undefined;
 
 /**
- * Discover and load `limn.config.{ts,mts,js,mjs,cjs}` from the current
+ * Discover and load `traceworks.config.{ts,mts,js,mjs,cjs}` from the current
  * working directory. Returns the parsed user config, or `undefined` when
  * no config file is present. Throws `ConfigLoadError` (carrying the
  * absolute path) if a candidate is found but fails to load.
@@ -54,11 +54,11 @@ let cached: CacheEntry | undefined;
  * the load result, not on cwd; tests that change cwd MUST call
  * `__resetConfigCacheForTests()` to avoid leaking state across files.
  */
-export function loadProjectConfig(): LimnUserConfig | undefined {
+export function loadProjectConfig(): TraceworksUserConfig | undefined {
   if (cached !== undefined) return cached.value;
   const cwd = process.cwd();
   for (const ext of CONFIG_EXTENSIONS) {
-    const candidate = resolve(cwd, `limn.config.${ext}`);
+    const candidate = resolve(cwd, `traceworks.config.${ext}`);
     if (!existsSync(candidate)) continue;
     try {
       // `createRequire` is anchored on a directory by passing a
@@ -73,7 +73,7 @@ export function loadProjectConfig(): LimnUserConfig | undefined {
       // returns the previously-loaded object regardless of file changes.
       const cacheKey = req.resolve(candidate);
       delete req.cache[cacheKey];
-      const mod = req(candidate) as { default?: LimnUserConfig } | LimnUserConfig;
+      const mod = req(candidate) as { default?: TraceworksUserConfig } | TraceworksUserConfig;
       // Default-export interop: a `module.exports = { default: { ... } }`
       // shape (typical for a TypeScript file compiled with `esModuleInterop`)
       // unwraps once. Plain CommonJS exports surface directly.
@@ -81,7 +81,7 @@ export function loadProjectConfig(): LimnUserConfig | undefined {
         typeof mod === "object" && mod !== null && "default" in mod && mod.default !== undefined
           ? mod.default
           : mod
-      ) as LimnUserConfig;
+      ) as TraceworksUserConfig;
       cached = { value };
       return value;
     } catch (err) {

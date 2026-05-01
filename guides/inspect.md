@@ -1,14 +1,14 @@
 # Inspector
 
-The local debug UI. The "wow moment" of Limn. Phase 2 ships the UI; Phase 1 ships the trace JSON it reads.
+The local debug UI. The "wow moment" of Traceworks. Phase 2 ships the UI; Phase 1 ships the trace JSON it reads.
 
 ## Trace storage
 
 Every call from Layer 1 (and, in Phase 3, Layer 2) writes a structured
 JSON record. The on-disk file name is a ULID for chronological sort
-(`.limn/traces/<ulid>.json`); the trace `id` inside the body is a
+(`.traceworks/traces/<ulid>.json`); the trace `id` inside the body is a
 separate stable `trc_<uuid>` used for cross-references. The directory
-is configurable via `trace.dir` in `limn.config.ts`.
+is configurable via `trace.dir` in `traceworks.config.ts`.
 
 Disable tracing entirely with `trace.enabled: false`. On-by-default key
 redaction can be turned off with `trace.redactKeys: false` if you really
@@ -54,7 +54,7 @@ reserved for a future revision if the inspector needs it.
 Phase 2 placeholder (target shape):
 
 ```bash
-npx limn inspect
+npx traceworks inspect
 # opens localhost:3000
 ```
 
@@ -72,8 +72,8 @@ Local-only: no telemetry, no account, no network calls beyond the LLM provider.
 While the UI is in flight, the JSON files are human-readable. A quick browse:
 
 ```bash
-ls -lt .limn/traces/ | head
-cat .limn/traces/$(ls -t .limn/traces/ | head -1) | jq .
+ls -lt .traceworks/traces/ | head
+cat .traceworks/traces/$(ls -t .traceworks/traces/ | head -1) | jq .
 ```
 
 The schema is intentionally stable so any tool that speaks JSON can ingest it.

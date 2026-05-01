@@ -1,4 +1,4 @@
-import { ai } from "limn";
+import { ai } from "traceworks";
 
 async function main(): Promise<void> {
   for await (const chunk of ai.stream("Write a haiku about debugging.")) {

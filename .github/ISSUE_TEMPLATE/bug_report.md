@@ -1,6 +1,6 @@
 ---
 name: Bug report
-about: Report a reproducible defect in Limn
+about: Report a reproducible defect in Traceworks
 title: "[bug] "
 labels: bug
 assignees: ''
@@ -15,7 +15,7 @@ A clear one-sentence description of what's wrong.
 Paste the exact code that triggers the failure. Strip secrets but keep the model name and any relevant configuration.
 
 ```ts
-import { ai } from "limn";
+import { ai } from "traceworks";
 
 const result = await ai.ask("...", {
   model: "claude-sonnet-4-6",
@@ -25,19 +25,19 @@ const result = await ai.ask("...", {
 
 ## Expected behavior
 
-What you expected Limn to return, throw, or stream.
+What you expected Traceworks to return, throw, or stream.
 
 ## Actual behavior
 
-What Limn actually did. If a typed error was thrown (`RateLimitError`, `SchemaValidationError`, `ToolExecutionError`, ...), paste its full message.
+What Traceworks actually did. If a typed error was thrown (`RateLimitError`, `SchemaValidationError`, `ToolExecutionError`, ...), paste its full message.
 
 ## Trace
 
-If the issue is reproducible locally, paste the relevant trace JSON from `.limn/traces/` (redact provider responses if they contain anything sensitive). Trace IDs are surfaced on every error message.
+If the issue is reproducible locally, paste the relevant trace JSON from `.traceworks/traces/` (redact provider responses if they contain anything sensitive). Trace IDs are surfaced on every error message.
 
 ## Environment
 
-- Limn version (`npm ls limn`):
+- Traceworks version (`npm ls traceworks`):
 - Node.js version (`node --version`):
 - Package manager + version (pnpm / npm / yarn):
 - OS:

@@ -1,6 +1,6 @@
-# Limn examples
+# Traceworks examples
 
-Each subdirectory is a runnable, single-file demo of one Limn surface. The same configuration applies to all of them: set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) in your environment, install dependencies at the repo root with `pnpm install`, then run an example with:
+Each subdirectory is a runnable, single-file demo of one Traceworks surface. The same configuration applies to all of them: set `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) in your environment, install dependencies at the repo root with `pnpm install`, then run an example with:
 
 ```bash
 pnpm tsx examples/01-basic-ask/index.ts
@@ -8,7 +8,7 @@ pnpm tsx examples/01-basic-ask/index.ts
 
 | Example                     | What it shows                                                              |
 | --------------------------- | -------------------------------------------------------------------------- |
-| `01-basic-ask`              | The smallest possible Limn program: one `ai.ask` call.                     |
+| `01-basic-ask`              | The smallest possible Traceworks program: one `ai.ask` call.                     |
 | `02-chat`                   | Multi-turn conversation with role + content message shape.                 |
 | `03-extract`                | Schema-validated extraction with Zod, including the validation-failure path. |
 | `04-stream`                 | Token-by-token streaming, both via `for await` and via `onChunk`.          |

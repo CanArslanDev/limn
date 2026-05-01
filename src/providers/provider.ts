@@ -76,7 +76,7 @@ export interface Provider {
   /**
    * Begin a streaming request. Returns the iterable chunk channel plus a
    * usage promise that resolves at end-of-stream. Adapters translate
-   * SDK-level errors into `LimnError` subclasses just like `request()`. The
+   * SDK-level errors into `TraceworksError` subclasses just like `request()`. The
    * iterator's first `next()` is the latest point at which a "first-chunk"
    * error can surface; the dispatcher's stream loop treats first-chunk
    * errors as retryable per the configured strategy.

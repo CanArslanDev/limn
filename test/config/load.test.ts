@@ -1,6 +1,6 @@
 /**
  * `loadProjectConfig` tests. Drives the discovery + cache behavior using
- * temporary directories so the project's own `limn.config.*` (if any) cannot
+ * temporary directories so the project's own `traceworks.config.*` (if any) cannot
  * interfere. Each test's `beforeEach` creates an isolated tmp dir, chdirs
  * there, resets the load cache; `afterEach` restores cwd, drops the dir,
  * resets the cache again so test files in the same Vitest worker do not
@@ -32,7 +32,7 @@ describe("loadProjectConfig", () => {
     // tests construct via join(dir, ...) matches what process.cwd() reports
     // after chdir. Without this, the syntax-error test compares two
     // semantically-equivalent paths that string-compare unequal.
-    dir = realpathSync(await mkdtemp(join(tmpdir(), "limn-load-cfg-")));
+    dir = realpathSync(await mkdtemp(join(tmpdir(), "traceworks-load-cfg-")));
     process.chdir(dir);
     __resetConfigCacheForTests();
   });
@@ -43,13 +43,13 @@ describe("loadProjectConfig", () => {
     __resetConfigCacheForTests();
   });
 
-  it("returns undefined when no limn.config.* exists at the cwd", () => {
+  it("returns undefined when no traceworks.config.* exists at the cwd", () => {
     expect(loadProjectConfig()).toBeUndefined();
   });
 
-  it("loads a CommonJS limn.config.cjs and returns its export", async () => {
+  it("loads a CommonJS traceworks.config.cjs and returns its export", async () => {
     await writeFile(
-      join(dir, "limn.config.cjs"),
+      join(dir, "traceworks.config.cjs"),
       `module.exports = { defaultModel: "claude-opus-4-7", trace: { dir: ".cjs-traces" } };`,
       "utf8",
     );
@@ -60,7 +60,7 @@ describe("loadProjectConfig", () => {
 
   it("unwraps a default-export shape from CommonJS interop", async () => {
     await writeFile(
-      join(dir, "limn.config.cjs"),
+      join(dir, "traceworks.config.cjs"),
       `module.exports = { default: { defaultModel: "claude-haiku-4-5" } };`,
       "utf8",
     );
@@ -69,7 +69,7 @@ describe("loadProjectConfig", () => {
   });
 
   it("throws ConfigLoadError carrying the absolute path on syntax errors", async () => {
-    await writeFile(join(dir, "limn.config.cjs"), "module.exports = { broken: ;", "utf8");
+    await writeFile(join(dir, "traceworks.config.cjs"), "module.exports = { broken: ;", "utf8");
     let caught: unknown;
     try {
       loadProjectConfig();
@@ -78,13 +78,13 @@ describe("loadProjectConfig", () => {
     }
     expect(caught).toBeInstanceOf(ConfigLoadError);
     const err = caught as ConfigLoadError;
-    expect(err.configPath).toBe(join(dir, "limn.config.cjs"));
+    expect(err.configPath).toBe(join(dir, "traceworks.config.cjs"));
     expect(err.cause).toBeDefined();
   });
 
   it("caches the load result; second call does not re-read the file", async () => {
     await writeFile(
-      join(dir, "limn.config.cjs"),
+      join(dir, "traceworks.config.cjs"),
       `module.exports = { defaultModel: "claude-opus-4-7" };`,
       "utf8",
     );
@@ -93,7 +93,7 @@ describe("loadProjectConfig", () => {
     // honored, the second call returns the original value (not the new
     // value) without ever touching the file.
     await writeFile(
-      join(dir, "limn.config.cjs"),
+      join(dir, "traceworks.config.cjs"),
       `module.exports = { defaultModel: "claude-haiku-4-5" };`,
       "utf8",
     );
@@ -104,13 +104,13 @@ describe("loadProjectConfig", () => {
 
   it("__resetConfigCacheForTests forces a fresh load on the next call", async () => {
     await writeFile(
-      join(dir, "limn.config.cjs"),
+      join(dir, "traceworks.config.cjs"),
       `module.exports = { defaultModel: "claude-opus-4-7" };`,
       "utf8",
     );
     loadProjectConfig();
     await writeFile(
-      join(dir, "limn.config.cjs"),
+      join(dir, "traceworks.config.cjs"),
       `module.exports = { defaultModel: "claude-haiku-4-5" };`,
       "utf8",
     );

@@ -15,7 +15,7 @@
  * format change on either audience to satisfy the other. The on-disk
  * mapping ULID -> trace ID lives in the file's JSON body.
  *
- * Why a hand-rolled ULID encoder: the only runtime dependency Limn allows
+ * Why a hand-rolled ULID encoder: the only runtime dependency Traceworks allows
  * outside provider SDKs is `zod` (CLAUDE.md hard rule #10). A 30-line
  * encoder using `crypto.getRandomValues` for entropy keeps the bundle
  * surface unchanged. The implementation matches the reference ULID spec

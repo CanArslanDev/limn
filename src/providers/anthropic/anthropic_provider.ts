@@ -181,8 +181,8 @@ export class AnthropicProvider implements Provider {
   }
 
   /**
-   * Translate a Limn `ProviderRequest` into an Anthropic SDK call, then map
-   * the SDK's response (or thrown error) into the Limn shapes the rest of
+   * Translate a Traceworks `ProviderRequest` into an Anthropic SDK call, then map
+   * the SDK's response (or thrown error) into the Traceworks shapes the rest of
    * the library consumes.
    *
    * Anthropic's messages array does not accept `role: "system"`; system
@@ -413,7 +413,7 @@ export class AnthropicProvider implements Provider {
       throw new AuthError("ANTHROPIC_API_KEY env var not set; cannot reach Anthropic.");
     }
     // The SDK's default maxRetries=2 would re-issue 5xx and 429 calls a few
-    // times before surfacing the error. Limn owns retry policy at the client
+    // times before surfacing the error. Traceworks owns retry policy at the client
     // layer (batch 1.4), so we disable the SDK's built-in retries to avoid
     // double-retries and keep error mapping deterministic. The `fetch`
     // override is forwarded conditionally so production code (no override)
@@ -516,7 +516,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Translate one Limn `Attachment` to its Anthropic content-block shape.
+ * Translate one Traceworks `Attachment` to its Anthropic content-block shape.
  * Pulled out for testability and to keep `buildSdkMessages` focused on
  * placement (which message the blocks attach to) rather than per-attachment
  * shape conversion.
@@ -549,7 +549,7 @@ function toAnthropicAttachmentBlock(att: Attachment): AnthropicImageBlock {
 }
 
 /**
- * Translate the SDK's `Message` payload into Limn's `ProviderResponse`. Pulled
+ * Translate the SDK's `Message` payload into Traceworks's `ProviderResponse`. Pulled
  * out of the class so it stays a pure function (testable in isolation if we
  * ever need to) and so the request method body reads as the orchestration
  * layer it is.
@@ -575,7 +575,7 @@ function mapSdkResponse(sdk: SdkMessageResponse): ProviderResponse {
 }
 
 /**
- * Map Anthropic's `stop_reason` enum onto Limn's narrower union. Unknown
+ * Map Anthropic's `stop_reason` enum onto Traceworks's narrower union. Unknown
  * future values fall through to "end" rather than throwing; an unfamiliar
  * stop reason should not cause a successful generation to look like a failure.
  */
@@ -595,7 +595,7 @@ function mapStopReason(sdk: SdkMessageResponse["stop_reason"]): ProviderResponse
 }
 
 /**
- * Translate any throw out of the SDK into a Limn typed error. Order matters:
+ * Translate any throw out of the SDK into a Traceworks typed error. Order matters:
  * the more specific subclasses come first so `APIError` (the base) only
  * catches the long tail.
  *

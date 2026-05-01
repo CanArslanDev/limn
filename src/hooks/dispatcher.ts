@@ -17,7 +17,7 @@
  * model output. We catch + warn per-phase so other hooks still run.
  */
 import type { ChatMessage } from "../client/options.js";
-import { LimnError, ProviderError } from "../errors/index.js";
+import { ProviderError, TraceworksError } from "../errors/index.js";
 import type { ModelName } from "../providers/model_name.js";
 import { newTraceId as _newTraceId } from "../trace/trace_id.js";
 import { NO_RETRY, type RetryStrategy } from "./retry_strategy.js";
@@ -53,8 +53,8 @@ export interface HookContext {
     readonly inputTokens: number;
     readonly outputTokens: number;
   };
-  /** Populated only after `onCallError`. Always a `LimnError` subclass. */
-  readonly error?: LimnError;
+  /** Populated only after `onCallError`. Always a `TraceworksError` subclass. */
+  readonly error?: TraceworksError;
 }
 
 /**
@@ -273,7 +273,7 @@ export class HookDispatcher {
           await this.fire("onCallSuccess", ctx);
           return;
         } catch (err) {
-          const wrapped = this.toLimnError(err);
+          const wrapped = this.toTraceworksError(err);
           // Mid-stream failures (any chunk already yielded) never retry:
           // re-issuing the same request would duplicate output for the
           // consumer. Surface and fire onCallError.
@@ -334,7 +334,7 @@ export class HookDispatcher {
           await this.fire("onCallSuccess", ctx);
           return result;
         } catch (err) {
-          const wrapped = this.toLimnError(err);
+          const wrapped = this.toTraceworksError(err);
           const delayMs = this.retry.decide(attempt, wrapped);
           if (delayMs === null) {
             ctx = { ...ctx, error: wrapped };
@@ -360,25 +360,25 @@ export class HookDispatcher {
         // Hooks must not poison the call. Surface the failure on stderr so
         // operators notice; do not rethrow. `console.warn` is allowed by the
         // project's Biome config (see biome.json `noConsole.allow`).
-        console.warn(`[limn] hook "${hook.name}" failed in ${phase}:`, err);
+        console.warn(`[traceworks] hook "${hook.name}" failed in ${phase}:`, err);
       }
     }
   }
 
   /**
-   * Normalize an unknown thrown value into a `LimnError`. Hooks always see a
+   * Normalize an unknown thrown value into a `TraceworksError`. Hooks always see a
    * typed error in `ctx.error`; downstream rethrow keeps the original value
    * so the public surface preserves whatever the provider raised.
    *
-   * Narrows on the abstract `LimnError` base, not on `ProviderError`, so
+   * Narrows on the abstract `TraceworksError` base, not on `ProviderError`, so
    * every typed subclass (RateLimitError, AuthError, ModelTimeoutError,
    * SchemaValidationError, ToolExecutionError) reaches the hook unchanged.
    * Anything else (a bare `Error`, a string throw) is wrapped in a generic
    * `ProviderError` with provider="unknown" so the typed-error contract on
    * `HookContext.error` holds for arbitrary throws too.
    */
-  private toLimnError(err: unknown): LimnError {
-    if (err instanceof LimnError) return err;
+  private toTraceworksError(err: unknown): TraceworksError {
+    if (err instanceof TraceworksError) return err;
     // Unknown throws are deterministic by assumption: we have no signal that
     // re-issuing the same request would behave differently, so mark the
     // wrapper non-retryable. Mirrors the philosophy in

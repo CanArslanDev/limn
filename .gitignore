@@ -70,9 +70,9 @@ Thumbs.db
 .vscode/
 *.iml
 
-# Limn local trace storage (Phase 1 default trace sink)
-.limn/
-.limn-traces/
+# Traceworks local trace storage (Phase 1 default trace sink)
+.traceworks/
+.traceworks-traces/
 
 # Project-internal files - kept local, never committed
 # Mirrors rune's discipline: AI-authored notes, plans, and operating manuals

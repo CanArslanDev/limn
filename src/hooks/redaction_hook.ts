@@ -6,7 +6,7 @@
  * rather than smuggling extra fields onto the context).
  *
  * Why a separate hook (vs. baking redaction into TraceHook): redaction is
- * opt-out via `LimnConfig.trace.redactKeys`. Splitting the concerns lets
+ * opt-out via `TraceworksConfig.trace.redactKeys`. Splitting the concerns lets
  * the factory drop RedactionHook entirely when the user opts out, instead
  * of branching inside TraceHook on every call. Smaller surface, simpler
  * tests, no dead branches at runtime.
@@ -24,7 +24,7 @@
  * populated by RedactionHook in the prior phases.
  */
 
-import type { LimnError } from "../errors/index.js";
+import type { TraceworksError } from "../errors/index.js";
 import { redactKeys } from "../trace/redaction.js";
 import type { Hook, HookContext } from "./dispatcher.js";
 import type { TraceState } from "./trace_state.js";
@@ -87,7 +87,7 @@ export class RedactionHook implements Hook {
    */
   public async onCallError(ctx: HookContext): Promise<void> {
     if (ctx.error === undefined) return;
-    const err: LimnError = ctx.error;
+    const err: TraceworksError = ctx.error;
     const { value: cleanedMessage, redacted } = redactKeys(err.message);
     this.state.error = {
       code: err.code,

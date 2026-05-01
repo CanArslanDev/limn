@@ -1,6 +1,6 @@
 /**
  * Local trace pipeline. Phase 1 default sink writes one JSON record per call
- * to `.limn/traces/<traceId>.json`. The schema is intentionally stable so the
+ * to `.traceworks/traces/<traceId>.json`. The schema is intentionally stable so the
  * inspector (Phase 2) and the optional hosted backend (Phase 5) read the
  * same shape.
  */

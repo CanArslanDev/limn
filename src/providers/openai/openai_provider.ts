@@ -191,8 +191,8 @@ export class OpenAIProvider implements Provider {
   }
 
   /**
-   * Translate a Limn `ProviderRequest` into an OpenAI SDK call, then map
-   * the SDK's response (or thrown error) into the Limn shapes the rest of
+   * Translate a Traceworks `ProviderRequest` into an OpenAI SDK call, then map
+   * the SDK's response (or thrown error) into the Traceworks shapes the rest of
    * the library consumes.
    *
    * OpenAI's chat completions API does not accept a top-level `system`
@@ -420,7 +420,7 @@ export class OpenAIProvider implements Provider {
       throw new AuthError("OPENAI_API_KEY env var not set; cannot reach OpenAI.");
     }
     // The SDK's default maxRetries=2 would re-issue 5xx and 429 calls a
-    // few times before surfacing the error. Limn owns retry policy at the
+    // few times before surfacing the error. Traceworks owns retry policy at the
     // client layer (batch 1.3), so we disable the SDK's built-in retries
     // to avoid double-retries and keep error mapping deterministic. The
     // `fetch` override is forwarded conditionally so production code (no
@@ -537,7 +537,7 @@ function toBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Translate one Limn `Attachment` to its OpenAI content-part shape. Pulled
+ * Translate one Traceworks `Attachment` to its OpenAI content-part shape. Pulled
  * out for testability and to keep `buildSdkMessages` focused on placement
  * (which message the parts attach to) rather than per-attachment shape
  * conversion.
@@ -566,7 +566,7 @@ function toOpenAIAttachmentBlock(att: Attachment): OpenAIImageBlock {
 }
 
 /**
- * Translate the SDK's `ChatCompletion` payload into Limn's
+ * Translate the SDK's `ChatCompletion` payload into Traceworks's
  * `ProviderResponse`. Pulled out of the class so it stays a pure function
  * (testable in isolation if we ever need to) and so the request method body
  * reads as the orchestration layer it is.
@@ -592,7 +592,7 @@ function mapSdkResponse(sdk: SdkChatCompletionResponse): ProviderResponse {
 }
 
 /**
- * Map OpenAI's `finish_reason` enum onto Limn's narrower union. Unknown
+ * Map OpenAI's `finish_reason` enum onto Traceworks's narrower union. Unknown
  * future values fall through to "end" rather than throwing; an unfamiliar
  * stop reason should not cause a successful generation to look like a
  * failure. `content_filter` surfaces as `end` because the content field is
@@ -616,7 +616,7 @@ function mapStopReason(sdk: SdkFinishReason | null): ProviderResponse["stopReaso
 }
 
 /**
- * Translate any throw out of the SDK into a Limn typed error. Order matters:
+ * Translate any throw out of the SDK into a Traceworks typed error. Order matters:
  * the more specific subclasses come first so `APIError` (the base) only
  * catches the long tail.
  *

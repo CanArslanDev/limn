@@ -1,10 +1,10 @@
 /**
- * Sealed error hierarchy for Limn. Every typed failure derives from `LimnError`
- * so that consumers can `instanceof LimnError` once, then narrow on the
+ * Sealed error hierarchy for Traceworks. Every typed failure derives from `TraceworksError`
+ * so that consumers can `instanceof TraceworksError` once, then narrow on the
  * variant. Each variant documents its expected recovery path inline.
  */
 
-export abstract class LimnError extends Error {
+export abstract class TraceworksError extends Error {
   public abstract readonly code: string;
 
   public constructor(
@@ -21,7 +21,7 @@ export abstract class LimnError extends Error {
  * Recovery: surface to the user, do not retry. Bad keys never become good
  * by waiting.
  */
-export class AuthError extends LimnError {
+export class AuthError extends TraceworksError {
   public readonly code = "AUTH_ERROR" as const;
 }
 
@@ -30,7 +30,7 @@ export class AuthError extends LimnError {
  * Recovery: exponential backoff up to the configured `retry.maxAttempts`,
  * honoring `Retry-After` when present.
  */
-export class RateLimitError extends LimnError {
+export class RateLimitError extends TraceworksError {
   public readonly code = "RATE_LIMIT" as const;
 
   public constructor(
@@ -54,7 +54,7 @@ export class RateLimitError extends LimnError {
  * pass `retryable: false` explicitly. The retry strategy reads this flag to
  * decide whether to back off or rethrow immediately.
  */
-export class ProviderError extends LimnError {
+export class ProviderError extends TraceworksError {
   public readonly code = "PROVIDER_ERROR" as const;
 
   public constructor(
@@ -71,7 +71,7 @@ export class ProviderError extends LimnError {
  * Request did not return within the configured `timeoutMs`. Recovery: retry
  * once with a longer timeout, or surface to the caller.
  */
-export class ModelTimeoutError extends LimnError {
+export class ModelTimeoutError extends TraceworksError {
   public readonly code = "MODEL_TIMEOUT" as const;
 
   public constructor(
@@ -88,7 +88,7 @@ export class ModelTimeoutError extends LimnError {
  * supplied Zod schema. Carries both the expected schema description and the
  * actual payload so the inspector can render a side-by-side diff.
  */
-export class SchemaValidationError extends LimnError {
+export class SchemaValidationError extends TraceworksError {
   public readonly code = "SCHEMA_VALIDATION" as const;
 
   public constructor(
@@ -106,7 +106,7 @@ export class SchemaValidationError extends LimnError {
  * input that triggered the failure, so the agent loop can decide whether to
  * retry the model with corrective feedback or surface the error.
  */
-export class ToolExecutionError extends LimnError {
+export class ToolExecutionError extends TraceworksError {
   public readonly code = "TOOL_EXECUTION" as const;
 
   public constructor(
@@ -120,17 +120,17 @@ export class ToolExecutionError extends LimnError {
 }
 
 /**
- * A `limn.config.<ts|js|cjs|mjs>` file was found at the project root but
+ * A `traceworks.config.<ts|js|cjs|mjs>` file was found at the project root but
  * failed to load (syntax error, import error, runtime throw inside the
  * module). Carries the absolute path to the offending config file so users
  * (and the eventual inspector UI) can jump straight to it. The original
  * error lives on `cause`.
  *
  * Recovery: fix the syntax/import error in the named file, or move/rename
- * the file (e.g. `limn.config.ts.bak`) to disable discovery temporarily so
+ * the file (e.g. `traceworks.config.ts.bak`) to disable discovery temporarily so
  * the rest of the application can run while debugging.
  */
-export class ConfigLoadError extends LimnError {
+export class ConfigLoadError extends TraceworksError {
   public readonly code = "CONFIG_LOAD" as const;
 
   public constructor(

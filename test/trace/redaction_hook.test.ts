@@ -86,7 +86,7 @@ describe("RedactionHook", () => {
     expect(state.redactedFields).toContain("error.message");
   });
 
-  it("preserves error codes for every LimnError subclass it sees", async () => {
+  it("preserves error codes for every TraceworksError subclass it sees", async () => {
     const state = newState();
     const hook = new RedactionHook({ state, request: { messages: [] } });
     await hook.onCallStart(newCtx());

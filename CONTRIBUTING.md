@@ -1,14 +1,14 @@
-# Contributing to Limn
+# Contributing to Traceworks
 
-Thanks for your interest in contributing. This guide covers what you need to know to work on Limn productively.
+Thanks for your interest in contributing. This guide covers what you need to know to work on Traceworks productively.
 
 ## Project overview
 
-Limn is a TypeScript-first library that wraps Anthropic and OpenAI behind one ergonomic surface, treats agents and tool use as first-class, and ships a local trace pipeline so every call is debuggable from `npm install`. It is a library, not a framework: users call our code; we do not call theirs. Optional CLI scaffolding lives behind `npx limn init` but is never required.
+Traceworks is a TypeScript-first library that wraps Anthropic and OpenAI behind one ergonomic surface, treats agents and tool use as first-class, and ships a local trace pipeline so every call is debuggable from `npm install`. It is a library, not a framework: users call our code; we do not call theirs. Optional CLI scaffolding lives behind `npx traceworks init` but is never required.
 
 ## Getting started
 
-- Clone: `git clone https://github.com/CanArslanDev/limn.git`
+- Clone: `git clone https://github.com/CanArslanDev/traceworks.git`
 - Install: `pnpm install` (the repo pins pnpm 9.x via `packageManager`; Node 20.10+ via `.nvmrc`)
 - Build: `pnpm run build`
 - Test: `pnpm run test`
@@ -18,7 +18,7 @@ Limn is a TypeScript-first library that wraps Anthropic and OpenAI behind one er
 
 ## Architecture at a glance
 
-Limn enforces a unidirectional dependency flow. Each layer imports only downstream layers:
+Traceworks enforces a unidirectional dependency flow. Each layer imports only downstream layers:
 
 ```
 public surface (ai, tool, defineConfig)
@@ -93,7 +93,7 @@ CI runs without provider keys. Live-API tests are gated by the presence of `ANTH
 
 ## Commit style
 
-Limn uses [Conventional Commits](https://www.conventionalcommits.org/):
+Traceworks uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 - `feat:` new user-visible behaviour
 - `fix:` bug fix

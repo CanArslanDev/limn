@@ -1,55 +1,55 @@
-# Limn
+# Traceworks
 
-> An AI-native TypeScript library for building, debugging, and operating LLM applications. Limn your AI.
+> Trace your AI calls. Locally. A TypeScript-first library for building, debugging, and operating LLM applications.
 
-[![npm](https://img.shields.io/npm/v/limn?label=npm)](https://www.npmjs.com/package/limn)
+[![npm](https://img.shields.io/npm/v/traceworks?label=npm)](https://www.npmjs.com/package/traceworks)
 [![Node](https://img.shields.io/badge/node-%E2%89%A5%2020.10-green)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/typescript-%E2%89%A5%205.6-blue)](https://www.typescriptlang.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
-Limn is a single TypeScript library that makes the easy LLM things easy, the hard things possible, and observability free by default. It wraps Anthropic and OpenAI behind one ergonomic surface, treats agents and tool use as first-class, and ships a local trace pipeline so every call is debuggable from the moment you install it.
+Traceworks is a single TypeScript library that makes the easy LLM things easy, the hard things possible, and observability free by default. It wraps Anthropic and OpenAI behind one ergonomic surface, treats agents and tool use as first-class, and ships a local trace pipeline so every call is debuggable from the moment you install it.
 
-No service to sign up for. No separate observability product to wire in. No framework to commit to. Just `npm install limn`.
+No service to sign up for. No separate observability product to wire in. No framework to commit to. Just `npm install traceworks`.
 
 ## Why
 
-Building LLM apps today means stitching three or four independent libraries together: the SDK, an agent layer, an observability platform, and a scaffolding tool. Limn collapses that surface area into a single import with shared types and a shared trace pipeline, so the simplest call is one line and a five-line program already has full tracing, retries, and clear error messages.
+Building LLM apps today means stitching three or four independent libraries together: the SDK, an agent layer, an observability platform, and a scaffolding tool. Traceworks collapses that surface area into a single import with shared types and a shared trace pipeline, so the simplest call is one line and a five-line program already has full tracing, retries, and clear error messages.
 
 ## Features
 
-- **Three-layer API surface.** Layer 1: single-shot `ai.ask` / `ai.chat` / `ai.extract` / `ai.stream`. Layer 2: `ai.agent({ model, tools, onError })` for tool use and multi-turn loops. Layer 3: local `npx limn inspect` debug UI reading from `.limn/traces/` JSON.
-- **Provider-agnostic core.** Anthropic and OpenAI on day one, abstracted behind one client. Pick a model name; Limn picks the right SDK.
+- **Three-layer API surface.** Layer 1: single-shot `ai.ask` / `ai.chat` / `ai.extract` / `ai.stream`. Layer 2: `ai.agent({ model, tools, onError })` for tool use and multi-turn loops. Layer 3: local `npx traceworks inspect` debug UI reading from `.traceworks/traces/` JSON.
+- **Provider-agnostic core.** Anthropic and OpenAI on day one, abstracted behind one client. Pick a model name; Traceworks picks the right SDK.
 - **Typed errors with documented recovery paths.** `RateLimitError`, `SchemaValidationError`, `ToolExecutionError`, `ModelTimeoutError`, `AuthError`, `ProviderError`. No silent failures, no opaque stack traces.
 - **Streaming is first-class.** Every generation function has a streaming counterpart. Same API surface; no separate "streaming SDK".
-- **Image attachments built in.** Pass `attachments: [{ kind: "image", source: { type: "base64", data: buffer, mimeType } }]` (or a URL source) on any Layer 1 call. Limn handles base64 encoding inside the adapter; you supply raw `Buffer`s or URLs.
+- **Image attachments built in.** Pass `attachments: [{ kind: "image", source: { type: "base64", data: buffer, mimeType } }]` (or a URL source) on any Layer 1 call. Traceworks handles base64 encoding inside the adapter; you supply raw `Buffer`s or URLs.
 - **Structured extraction.** `ai.extract(schema, input)` validates the model's response against a Zod schema and surfaces a side-by-side expected-vs-actual diff in the inspector if it fails.
 - **Tool use with end-to-end types.** `tool({ name, description, input, run })` gives the model an input schema and your callback a typed argument. Malformed tool input is caught, surfaced clearly, and (optionally) retried with corrective feedback.
-- **Local-first observability.** Every call writes a structured JSON record to `.limn/traces/` by default. No telemetry, no account, no network calls beyond the LLM provider.
-- **Zero-config defaults that work.** A user who writes `await ai.ask("...")` gets a sensible model, sensible timeouts, sensible retries, without configuration. Configuration is hierarchical: global `limn.config.ts` -> per-agent -> per-call.
+- **Local-first observability.** Every call writes a structured JSON record to `.traceworks/traces/` by default. No telemetry, no account, no network calls beyond the LLM provider.
+- **Zero-config defaults that work.** A user who writes `await ai.ask("...")` gets a sensible model, sensible timeouts, sensible retries, without configuration. Configuration is hierarchical: global `traceworks.config.ts` -> per-agent -> per-call.
 - **Strict TypeScript.** Sealed error hierarchy, branded model names, no magic strings, full type inference end-to-end. `any` is banned outside the provider boundary.
-- **Single import path.** Everything ships from `limn`. Submodules (`limn/agent`, `limn/inspect`, `limn/errors`) exist for tree-shaking but are optional.
+- **Single import path.** Everything ships from `traceworks`. Submodules (`traceworks/agent`, `traceworks/inspect`, `traceworks/errors`) exist for tree-shaking but are optional.
 
 ## Install
 
 ```bash
-npm install limn
+npm install traceworks
 # or
-pnpm add limn
+pnpm add traceworks
 # or
-yarn add limn
+yarn add traceworks
 ```
 
 Until the first tagged release lands on npm, depend on the GitHub tag directly:
 
 ```bash
-npm install github:CanArslanDev/limn#v0.1.0
+npm install github:CanArslanDev/traceworks#v0.1.0
 ```
 
-Set your provider keys via environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), via `limn.config.ts`, or per call. See [`guides/getting-started.md`](guides/getting-started.md) for the full configuration walkthrough.
+Set your provider keys via environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), via `traceworks.config.ts`, or per call. See [`guides/getting-started.md`](guides/getting-started.md) for the full configuration walkthrough.
 
 ## Current release
 
-v0.1.0 ships Layer 1 (`ai.ask`, `ai.chat`, `ai.stream`, `ai.extract`) against Anthropic and OpenAI, with image attachments, an exponential-backoff retry policy, the local trace pipeline (filesystem JSON sink with API-key redaction), `limn.config.ts` discovery with per-call overrides, and the seven-variant `LimnError` hierarchy. The `npx limn inspect` UI, agents and tools, and the hosted backend follow in later phases.
+v0.1.0 ships Layer 1 (`ai.ask`, `ai.chat`, `ai.stream`, `ai.extract`) against Anthropic and OpenAI, with image attachments, an exponential-backoff retry policy, the local trace pipeline (filesystem JSON sink with API-key redaction), `traceworks.config.ts` discovery with per-call overrides, and the seven-variant `TraceworksError` hierarchy. The `npx traceworks inspect` UI, agents and tools, and the hosted backend follow in later phases.
 
 ## Detailed documentation
 
@@ -67,7 +67,7 @@ This README is the 5-minute tour. For deeper material, see [`guides/`](guides/):
 Set `ANTHROPIC_API_KEY` in your environment (`export ANTHROPIC_API_KEY=sk-ant-...`), then:
 
 ```ts
-import { ai } from "limn";
+import { ai } from "traceworks";
 
 // Single-shot question. Calls Anthropic end-to-end by default; pass
 // `{ model: "gpt-4o-mini" }` to route through OpenAI instead.
@@ -100,7 +100,7 @@ A runnable version lives in [`examples/`](examples/).
 ## Agents and tools
 
 ```ts
-import { ai, tool } from "limn";
+import { ai, tool } from "traceworks";
 import { z } from "zod";
 
 const search = tool({
@@ -119,14 +119,14 @@ const agent = ai.agent({
 const result = await agent.run("Research recent advances in RLHF");
 ```
 
-Tool inputs are typed end-to-end. If the model returns malformed JSON or argues with the schema, Limn surfaces a `SchemaValidationError` with the expected schema, the actual payload, and an optional automatic retry that feeds the model corrective feedback.
+Tool inputs are typed end-to-end. If the model returns malformed JSON or argues with the schema, Traceworks surfaces a `SchemaValidationError` with the expected schema, the actual payload, and an optional automatic retry that feeds the model corrective feedback.
 
 ## Local inspector
 
-Every call from the simple API and the agent layer writes a structured JSON record to `.limn/traces/`. To browse them locally:
+Every call from the simple API and the agent layer writes a structured JSON record to `.traceworks/traces/`. To browse them locally:
 
 ```bash
-npx limn inspect
+npx traceworks inspect
 # opens localhost:3000
 ```
 
@@ -134,22 +134,22 @@ The local UI shows: every prompt sent, every response received, every tool call,
 
 ## Configuration
 
-Limn reads configuration in this order (later overrides earlier):
+Traceworks reads configuration in this order (later overrides earlier):
 
 1. Built-in defaults.
-2. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `LIMN_TRACE_DIR`, `LIMN_DEFAULT_MODEL`, ...).
-3. `limn.config.ts` at the project root, if present.
+2. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `TRACEWORKS_TRACE_DIR`, `TRACEWORKS_DEFAULT_MODEL`, ...).
+3. `traceworks.config.ts` at the project root, if present.
 4. Per-agent options passed to `ai.agent({ ... })`.
 5. Per-call options passed to `ai.ask(prompt, { ... })` and friends.
 
 ```ts
-// limn.config.ts
-import { defineConfig } from "limn";
+// traceworks.config.ts
+import { defineConfig } from "traceworks";
 
 export default defineConfig({
   defaultModel: "claude-sonnet-4-6",
   retry: { maxAttempts: 3, backoff: "exponential" },
-  trace: { dir: ".limn/traces", enabled: true, redactKeys: true },
+  trace: { dir: ".traceworks/traces", enabled: true, redactKeys: true },
 });
 ```
 
@@ -161,7 +161,7 @@ A unidirectional pipeline:
 ai (public surface)  ->  Client  ->  Provider abstraction  ->  Anthropic | OpenAI SDK
                           |
                           v
-                       Trace pipeline  ->  .limn/traces/*.json  ->  npx limn inspect
+                       Trace pipeline  ->  .traceworks/traces/*.json  ->  npx traceworks inspect
                           |
                           v
                        Agent loop  ->  Tool dispatch  ->  Schema validation
@@ -171,14 +171,14 @@ Architecture invariants (imports flow downward only) are enforced by `test/archi
 
 ## Roadmap
 
-| Phase | Scope                                                | Target |
-| ----- | ---------------------------------------------------- | ------ |
-| 0     | Reserve names, scaffold repo, CI, placeholder npm    | done   |
-| 1     | Layer 1 + minimal trace JSON on disk                 | done   |
-| 2     | `npx limn inspect` local debug UI                    | next   |
-| 3     | Agents + tools + typed multi-turn loops              |        |
-| 4     | `npx limn init` CLI templates                        |        |
-| 5     | Hosted observability (opt-in)                        |        |
+| Phase | Scope                                                    | Target |
+| ----- | -------------------------------------------------------- | ------ |
+| 0     | Reserve names, scaffold repo, CI, placeholder npm        | done   |
+| 1     | Layer 1 + minimal trace JSON on disk                     | done   |
+| 2     | `npx traceworks inspect` local debug UI                  | next   |
+| 3     | Agents + tools + typed multi-turn loops                  |        |
+| 4     | `npx traceworks init` CLI templates                      |        |
+| 5     | Hosted observability (opt-in)                            |        |
 
 The full plan lives in [`idea.md`](idea.md) (local only) and the per-phase plan documents under `docs/superpowers/plans/` (local only).
 
@@ -196,4 +196,4 @@ MIT. See [`LICENSE`](LICENSE).
 
 ## Support
 
-If Limn helps your project, [buy me a coffee](https://buymeacoffee.com/canarslandev). Issue triage and feature work both run on caffeine.
+If Traceworks helps your project, [buy me a coffee](https://buymeacoffee.com/canarslandev). Issue triage and feature work both run on caffeine.

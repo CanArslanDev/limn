@@ -64,4 +64,4 @@ jobs:
         run: pnpm run build
 
       - name: Verify package can be packed
-        run: pnpm pack --pack-destination /tmp/limn-pack
+        run: pnpm pack --pack-destination /tmp/traceworks-pack

@@ -1,13 +1,13 @@
 # Cookbook
 
-Copy-paste recipes for common Limn patterns. Each recipe is self-contained and tested against the public surface.
+Copy-paste recipes for common Traceworks patterns. Each recipe is self-contained and tested against the public surface.
 
 > As of batch 1.7 every recipe below runs end-to-end against Anthropic and OpenAI when the corresponding API key is set.
 
 ## Run multiple prompts in parallel
 
 ```ts
-import { ai } from "limn";
+import { ai } from "traceworks";
 
 const [summary, sentiment, keywords] = await Promise.all([
   ai.ask("Summarize this:", text),
@@ -34,7 +34,7 @@ const final = await ai.ask("Polish this draft:", draft, {
 
 ```ts
 import { createWriteStream } from "node:fs";
-import { ai } from "limn";
+import { ai } from "traceworks";
 
 const out = createWriteStream("response.txt");
 for await (const chunk of ai.stream("Write a long-form essay on RLHF.")) {
@@ -46,7 +46,7 @@ out.end();
 ## Extract with retry on validation failure
 
 ```ts
-import { ai } from "limn";
+import { ai } from "traceworks";
 import { z } from "zod";
 
 const Invoice = z.object({
@@ -63,7 +63,7 @@ const invoice = await ai.extract(Invoice, ocrText, {
 ## Catch a specific error variant
 
 ```ts
-import { ai, RateLimitError, SchemaValidationError } from "limn";
+import { ai, RateLimitError, SchemaValidationError } from "traceworks";
 
 try {
   await ai.ask("...");

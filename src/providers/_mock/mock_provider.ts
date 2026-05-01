@@ -3,7 +3,7 @@
  * programmed errors so test code can drive `ai.ask` (and later `ai.chat`,
  * `ai.extract`) end-to-end without a network call.
  *
- * Never registered into the production registry by Limn itself: tests
+ * Never registered into the production registry by Traceworks itself: tests
  * register it explicitly via `registerProvider("anthropic", new MockProvider())`
  * and `reset()` after each test to avoid leaking the mock to neighbouring
  * suites.

@@ -25,7 +25,7 @@
  *     Timeouts are usually deterministic (the request really is too slow);
  *     halving the budget caps the worst-case wall time without losing the
  *     occasional transient hiccup.
- *   - Any other `LimnError` (SchemaValidationError, ToolExecutionError):
+ *   - Any other `TraceworksError` (SchemaValidationError, ToolExecutionError):
  *     return null. The retry layer is for transport-level recovery; logical
  *     failures escalate to the caller.
  *
@@ -38,13 +38,13 @@
  * used.
  */
 
-import type { RetryConfig } from "../config/limn_config.js";
+import type { RetryConfig } from "../config/traceworks_config.js";
 import {
   AuthError,
-  type LimnError,
   ModelTimeoutError,
   ProviderError,
   RateLimitError,
+  type TraceworksError,
 } from "../errors/index.js";
 
 /**
@@ -56,7 +56,7 @@ export interface RetryStrategy {
    * milliseconds before the next attempt, or `null` to give up and rethrow.
    * `attempt` is the 1-based counter of the attempt that just failed.
    */
-  decide(attempt: number, err: LimnError): number | null;
+  decide(attempt: number, err: TraceworksError): number | null;
 }
 
 /**
@@ -95,7 +95,7 @@ export class ExponentialBackoffStrategy implements RetryStrategy {
     this.randomFn = options.randomFn ?? Math.random;
   }
 
-  public decide(attempt: number, err: LimnError): number | null {
+  public decide(attempt: number, err: TraceworksError): number | null {
     if (err instanceof AuthError) return null;
 
     if (err instanceof RateLimitError) {

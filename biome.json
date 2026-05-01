@@ -11,7 +11,7 @@
       "build/**",
       "coverage/**",
       "node_modules/**",
-      ".limn/**",
+      ".traceworks/**",
       ".serena/**",
       "docs/**"
     ]

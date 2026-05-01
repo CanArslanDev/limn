@@ -20,12 +20,12 @@
  * Phase 1 sink (`FileSystemTraceSink`) writes one JSON file per record,
  * which means one file per call. Streaming partial records would force
  * the sink to either accumulate in memory or write incrementally;
- * neither serves the "users browse `.limn/traces/<id>.json`" UX. Phase 5
+ * neither serves the "users browse `.traceworks/traces/<id>.json`" UX. Phase 5
  * (hosted backend) may stream events; the hook will grow that capability
  * when the time comes.
  */
 
-import type { LimnError } from "../errors/index.js";
+import type { TraceworksError } from "../errors/index.js";
 import type { TraceRecord, TraceSink } from "../trace/trace.js";
 import type { Hook, HookContext } from "./dispatcher.js";
 import type { TraceState } from "./trace_state.js";
@@ -95,7 +95,7 @@ export class TraceHook implements Hook {
   public async onCallError(ctx: HookContext): Promise<void> {
     if (ctx.error === undefined) return;
     if (this.state.error === undefined) {
-      const err: LimnError = ctx.error;
+      const err: TraceworksError = ctx.error;
       this.state.error = { code: err.code, message: err.message };
     }
   }
@@ -137,7 +137,7 @@ export class TraceHook implements Hook {
       await this.sink.write(record);
     } catch (err) {
       console.warn(
-        `[limn] trace sink "${this.sink.constructor.name}" failed to write trace ${this.state.id}:`,
+        `[traceworks] trace sink "${this.sink.constructor.name}" failed to write trace ${this.state.id}:`,
         err,
       );
     }

@@ -150,7 +150,7 @@ describe("HookDispatcher", () => {
     expect(observedAttempt).toBe(1);
   });
 
-  it("preserves LimnError subclasses (RateLimitError) on ctx.error without re-wrapping", async () => {
+  it("preserves TraceworksError subclasses (RateLimitError) on ctx.error without re-wrapping", async () => {
     let capturedError: unknown;
     let capturedCode: string | undefined;
     const hook: Hook = {
@@ -171,7 +171,7 @@ describe("HookDispatcher", () => {
     expect(capturedCode).toBe("RATE_LIMIT");
   });
 
-  it("wraps non-LimnError throws into a ProviderError when populating ctx.error", async () => {
+  it("wraps non-TraceworksError throws into a ProviderError when populating ctx.error", async () => {
     let capturedCode: string | undefined;
     const hook: Hook = {
       name: "capture",
@@ -411,7 +411,7 @@ describe("HookDispatcher retry integration", () => {
     expect(delays).toEqual([100, 200]);
   });
 
-  it("preserves the original throw on rethrow (not the LimnError wrapper) after retries", async () => {
+  it("preserves the original throw on rethrow (not the TraceworksError wrapper) after retries", async () => {
     const { sleepFn } = recordingSleep();
     const dispatcher = new HookDispatcher({ retry: retryOnce, sleepFn });
     const original = new ProviderError("boom", "anthropic");

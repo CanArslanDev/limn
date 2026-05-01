@@ -34,8 +34,8 @@
 
     "baseUrl": ".",
     "paths": {
-      "limn": ["./src/index.ts"],
-      "limn/*": ["./src/*"]
+      "traceworks": ["./src/index.ts"],
+      "traceworks/*": ["./src/*"]
     }
   },
   "include": ["src/**/*.ts"],

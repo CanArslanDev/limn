@@ -1,6 +1,6 @@
 ---
 name: Provider proposal
-about: Propose adding a new LLM provider adapter to Limn
+about: Propose adding a new LLM provider adapter to Traceworks
 title: "[provider] "
 labels: provider, enhancement
 assignees: ''
@@ -25,19 +25,19 @@ What does it unlock that the existing two providers do not? Cost, latency, on-de
 
 ## Model name strategy
 
-How should users name models in Limn code? Flat strings (`"gemini-1.5-pro"`), namespaced (`"google:gemini-1.5-pro"`), or via a separate factory?
+How should users name models in Traceworks code? Flat strings (`"gemini-1.5-pro"`), namespaced (`"google:gemini-1.5-pro"`), or via a separate factory?
 
 ## Sample code
 
 ```ts
-import { ai } from "limn";
+import { ai } from "traceworks";
 
 const reply = await ai.ask("hello", { model: "<your-proposed-model-string>" });
 ```
 
 ## Adoption signal
 
-Roughly how many Limn users would actually use this? Link an issue or discussion if there's demand. Provider adapters with no adoption signal tend to stay in planning indefinitely.
+Roughly how many Traceworks users would actually use this? Link an issue or discussion if there's demand. Provider adapters with no adoption signal tend to stay in planning indefinitely.
 
 ## Willing to land it yourself?
 

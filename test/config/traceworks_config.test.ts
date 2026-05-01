@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import { defineConfig } from "../../src/config/define_config.js";
-import { DEFAULT_CONFIG } from "../../src/config/limn_config.js";
+import { DEFAULT_CONFIG } from "../../src/config/traceworks_config.js";
 import { DEFAULT_MODEL } from "../../src/providers/model_name.js";
 
 describe("config defaults", () => {
@@ -19,9 +19,9 @@ describe("config defaults", () => {
     expect(DEFAULT_CONFIG.retry.initialDelayMs).toBe(500);
   });
 
-  it("writes traces to .limn/traces by default with key redaction on", () => {
+  it("writes traces to .traceworks/traces by default with key redaction on", () => {
     expect(DEFAULT_CONFIG.trace.enabled).toBe(true);
-    expect(DEFAULT_CONFIG.trace.dir).toBe(".limn/traces");
+    expect(DEFAULT_CONFIG.trace.dir).toBe(".traceworks/traces");
     expect(DEFAULT_CONFIG.trace.redactKeys).toBe(true);
   });
 

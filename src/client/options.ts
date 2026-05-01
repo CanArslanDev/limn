@@ -25,7 +25,7 @@ export type SupportedImageMimeType = "image/png" | "image/jpeg" | "image/gif" | 
  *
  * - `base64`: the user supplies raw bytes as a `Uint8Array` (Node's `Buffer`
  *   extends `Uint8Array`, so a `Buffer` from `await fs.readFile(...)` works
- *   directly). Limn handles base64 encoding inside the adapter; the brief
+ *   directly). Traceworks handles base64 encoding inside the adapter; the brief
  *   explicitly forbids manual encoding at the call site.
  *
  * URL-based image sources require an SDK version that is not yet in our
@@ -57,11 +57,11 @@ export interface ImageAttachment {
 export type Attachment = ImageAttachment;
 
 interface BaseCallOptions {
-  /** Override the default model. Falls through to `LimnConfig.defaultModel`. */
+  /** Override the default model. Falls through to `TraceworksConfig.defaultModel`. */
   readonly model?: ModelName;
-  /** Per-call retry override. Falls through to `LimnConfig.retry.maxAttempts`. */
+  /** Per-call retry override. Falls through to `TraceworksConfig.retry.maxAttempts`. */
   readonly maxRetries?: number;
-  /** Per-call timeout. Falls through to `LimnConfig.timeoutMs`. */
+  /** Per-call timeout. Falls through to `TraceworksConfig.timeoutMs`. */
   readonly timeoutMs?: number;
   /** Per-call sampling temperature; provider clamps to its supported range. */
   readonly temperature?: number;

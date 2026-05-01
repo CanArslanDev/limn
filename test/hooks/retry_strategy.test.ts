@@ -2,13 +2,13 @@
  * Unit tests for `RetryStrategy` and the default `ExponentialBackoffStrategy`.
  *
  * The strategy is a plug-in: given an attempt counter and the wrapped
- * `LimnError`, it returns either a delay in milliseconds (caller sleeps then
+ * `TraceworksError`, it returns either a delay in milliseconds (caller sleeps then
  * retries) or `null` (caller gives up and rethrows). The dispatcher owns the
  * sleep + the loop; the strategy owns only the policy decision.
  *
  * The tests cover:
  *   - per-error-type policy (Auth / RateLimit / ProviderError(retryable) /
- *     ModelTimeoutError / unknown LimnError subclasses).
+ *     ModelTimeoutError / unknown TraceworksError subclasses).
  *   - maxAttempts cap across every retryable variant.
  *   - jitter math via an injected `randomFn`.
  *   - the exponential cap at 30s.
@@ -101,7 +101,7 @@ describe("ExponentialBackoffStrategy: per-error policy", () => {
     expect(s.decide(1, new ModelTimeoutError("slow", 30_000))).toBeNull();
   });
 
-  it("returns null for unknown LimnError subclasses (e.g. SchemaValidationError)", () => {
+  it("returns null for unknown TraceworksError subclasses (e.g. SchemaValidationError)", () => {
     const s = new ExponentialBackoffStrategy({ config: baseConfig });
     expect(s.decide(1, new SchemaValidationError("bad", "Person", {}))).toBeNull();
   });

@@ -2,7 +2,7 @@
  * Unit tests for the filesystem-backed `TraceSink`. Drives each public
  * method against a real temp directory; cleans up after itself so the test
  * pass leaves no artifacts under the OS temp tree (and never touches the
- * project's actual `.limn/`).
+ * project's actual `.traceworks/`).
  */
 
 import { mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
@@ -33,7 +33,7 @@ describe("FileSystemTraceSink", () => {
   let dir: string;
 
   beforeEach(async () => {
-    dir = await mkdtemp(join(tmpdir(), "limn-trace-"));
+    dir = await mkdtemp(join(tmpdir(), "traceworks-trace-"));
   });
 
   afterEach(async () => {

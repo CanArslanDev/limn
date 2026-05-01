@@ -1,4 +1,4 @@
-import { ai } from "limn";
+import { ai } from "traceworks";
 import { z } from "zod";
 
 const Person = z.object({

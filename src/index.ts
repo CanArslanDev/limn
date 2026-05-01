@@ -1,5 +1,5 @@
 /**
- * Limn - TypeScript-first library for building, debugging, and operating LLM
+ * Traceworks - TypeScript-first library for building, debugging, and operating LLM
  * applications.
  *
  * Public surface:
@@ -7,7 +7,7 @@
  *   - `tool`         : Layer 2 tool factory.
  *   - `defineConfig` : Project-level configuration helper.
  *
- * Submodules (`limn/agent`, `limn/inspect`, `limn/errors`) are exported for
+ * Submodules (`traceworks/agent`, `traceworks/inspect`, `traceworks/errors`) are exported for
  * tree-shaking but are not required.
  */
 
@@ -27,7 +27,7 @@ export type {
   SupportedImageMimeType,
 } from "./client/options.js";
 
-export type { LimnConfig } from "./config/limn_config.js";
+export type { TraceworksConfig } from "./config/traceworks_config.js";
 export type { ModelName } from "./providers/model_name.js";
 export type { RegisteredTool, ToolDefinition } from "./agent/tool.js";
 
@@ -44,7 +44,7 @@ export {
 export {
   AuthError,
   ConfigLoadError,
-  LimnError,
+  TraceworksError,
   ModelTimeoutError,
   ProviderError,
   RateLimitError,
@@ -52,4 +52,4 @@ export {
   ToolExecutionError,
 } from "./errors/index.js";
 
-export type { LimnUserConfig } from "./config/define_config.js";
+export type { TraceworksUserConfig } from "./config/define_config.js";

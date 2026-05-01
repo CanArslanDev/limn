@@ -1,6 +1,6 @@
 /**
  * Project-level configuration. Resolved from defaults -> env vars ->
- * `limn.config.ts` -> per-agent options -> per-call options. Each layer
+ * `traceworks.config.ts` -> per-agent options -> per-call options. Each layer
  * overrides the previous; only the leaves a user actually sets travel
  * down the stack.
  */
@@ -8,7 +8,7 @@
 import type { ModelName } from "../providers/model_name.js";
 import { DEFAULT_MODEL } from "../providers/model_name.js";
 
-export interface LimnConfig {
+export interface TraceworksConfig {
   readonly defaultModel: ModelName;
   readonly retry: RetryConfig;
   readonly trace: TraceConfig;
@@ -27,7 +27,7 @@ export interface TraceConfig {
   readonly redactKeys: boolean;
 }
 
-export const DEFAULT_CONFIG: LimnConfig = {
+export const DEFAULT_CONFIG: TraceworksConfig = {
   defaultModel: DEFAULT_MODEL,
   retry: {
     maxAttempts: 3,
@@ -36,7 +36,7 @@ export const DEFAULT_CONFIG: LimnConfig = {
   },
   trace: {
     enabled: true,
-    dir: ".limn/traces",
+    dir: ".traceworks/traces",
     redactKeys: true,
   },
   timeoutMs: 60_000,

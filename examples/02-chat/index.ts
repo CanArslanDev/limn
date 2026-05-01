@@ -1,4 +1,4 @@
-import { ai } from "limn";
+import { ai } from "traceworks";
 
 async function main(): Promise<void> {
   const reply = await ai.chat([

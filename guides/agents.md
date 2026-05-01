@@ -1,13 +1,13 @@
 # Agents and tools
 
-Limn's agent layer lives on top of Layer 1. Same client, same configuration, same trace pipeline.
+Traceworks's agent layer lives on top of Layer 1. Same client, same configuration, same trace pipeline.
 
 > Phase 3 placeholder. The runtime arrives once Layer 1 + the inspector are stable.
 
 ## The shape
 
 ```ts
-import { ai, tool } from "limn";
+import { ai, tool } from "traceworks";
 import { z } from "zod";
 
 const search = tool({
@@ -33,7 +33,7 @@ The tool factory. `input` is a Zod schema that doubles as:
 - A JSON-Schema document fed to the provider so the model knows what shape to produce.
 - A runtime validator that parses model-supplied input before calling `run`.
 
-If the model returns malformed input, Limn throws `SchemaValidationError` with the expected schema and the actual payload. With `onError: { SchemaValidationError: { retry: "once" } }`, the agent retries with the validation message fed back to the model as corrective feedback.
+If the model returns malformed input, Traceworks throws `SchemaValidationError` with the expected schema and the actual payload. With `onError: { SchemaValidationError: { retry: "once" } }`, the agent retries with the validation message fed back to the model as corrective feedback.
 
 ## `ai.agent({ ... })`
 
@@ -49,7 +49,7 @@ Returns an `Agent` with a single method: `run(prompt) -> Promise<AgentResult>`. 
 
 ## Error handling
 
-Every typed Limn error can have a per-agent retry policy:
+Every typed Traceworks error can have a per-agent retry policy:
 
 ```ts
 ai.agent({
@@ -79,7 +79,7 @@ Tool calls and tokens interleave in a single stream so UI code can render both i
 
 ## What's not in scope
 
-Limn's agent layer deliberately omits:
+Traceworks's agent layer deliberately omits:
 
 - Multi-agent orchestration (use a workflow tool if you need it; or open an issue if you'd like to discuss a built-in shape).
 - Built-in memory / vector stores (leave that choice to the user).
