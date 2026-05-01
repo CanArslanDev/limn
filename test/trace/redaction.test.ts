@@ -119,4 +119,35 @@ describe("redactKeys", () => {
     expect(value.b).toBe("[REDACTED]");
     expect(value.c).toBe("[REDACTED]");
   });
+
+  it("substitutes Buffer / Uint8Array values with a binary placeholder", () => {
+    const buf = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
+    const input = {
+      attachments: [{ source: { type: "base64", data: buf, mimeType: "image/png" } }],
+    };
+    const result = redactKeys(input);
+    const cleaned = result.value as {
+      attachments: Array<{
+        source: { type: string; data: { kind: string; byteLength: number }; mimeType: string };
+      }>;
+    };
+    expect(cleaned.attachments[0]?.source.data).toEqual({ kind: "binary", byteLength: 4 });
+    expect(result.redacted).toContain("attachments.0.source.data");
+  });
+
+  it("substitutes raw Uint8Array (not just Buffer)", () => {
+    const arr = new Uint8Array([1, 2, 3, 4, 5]);
+    const input = { data: arr };
+    const result = redactKeys(input);
+    const cleaned = result.value as { data: { kind: string; byteLength: number } };
+    expect(cleaned.data).toEqual({ kind: "binary", byteLength: 5 });
+    expect(result.redacted).toContain("data");
+  });
+
+  it("records binary substitution at the empty path when the top-level value is bytes", () => {
+    const arr = new Uint8Array([1, 2, 3]);
+    const result = redactKeys(arr);
+    expect(result.value).toEqual({ kind: "binary", byteLength: 3 });
+    expect(result.redacted).toEqual([""]);
+  });
 });

@@ -273,33 +273,15 @@ describe("AnthropicProvider attachments", () => {
     ]);
   });
 
-  it("emits a URL image block with the source-type 'url' shape", async () => {
-    const { fetch, calls } = singleResponse({ fixture: "messages_with_image.json" });
-    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
-    await provider.request({
-      ...baseRequest,
-      attachments: [{ kind: "image", source: { type: "url", url: "https://example.com/cat.jpg" } }],
-    });
-    const recorded = calls[0];
-    if (recorded === undefined) throw new Error("expected one call");
-    const body = recorded.body as { messages: ReadonlyArray<{ role: string; content: unknown }> };
-    const first = body.messages[0];
-    if (first === undefined) throw new Error("expected one message");
-    expect(first.content).toEqual([
-      { type: "image", source: { type: "url", url: "https://example.com/cat.jpg" } },
-      { type: "text", text: "hi" },
-    ]);
-  });
-
-  it("preserves attachment order (multiple images before the text)", async () => {
+  it("preserves attachment order (multiple base64 images before the text)", async () => {
     const { fetch, calls } = singleResponse({ fixture: "messages_with_image.json" });
     const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
     await provider.request({
       ...baseRequest,
       attachments: [
-        { kind: "image", source: { type: "url", url: "https://example.com/a.jpg" } },
+        { kind: "image", source: { type: "base64", data: pngBuffer, mimeType: "image/png" } },
         { kind: "image", source: { type: "base64", data: pngBuffer, mimeType: "image/jpeg" } },
-        { kind: "image", source: { type: "url", url: "https://example.com/c.gif" } },
+        { kind: "image", source: { type: "base64", data: pngBuffer, mimeType: "image/gif" } },
       ],
     });
     const recorded = calls[0];
@@ -344,7 +326,9 @@ describe("AnthropicProvider attachments", () => {
         { role: "assistant", content: "ack" },
         { role: "user", content: "second" },
       ],
-      attachments: [{ kind: "image", source: { type: "url", url: "https://example.com/a.jpg" } }],
+      attachments: [
+        { kind: "image", source: { type: "base64", data: pngBuffer, mimeType: "image/png" } },
+      ],
     });
     const recorded = calls[0];
     if (recorded === undefined) throw new Error("expected one call");
@@ -352,12 +336,41 @@ describe("AnthropicProvider attachments", () => {
     expect(body.messages).toHaveLength(3);
     // First user message: content is an array with the image and the text.
     expect(body.messages[0]?.content).toEqual([
-      { type: "image", source: { type: "url", url: "https://example.com/a.jpg" } },
+      {
+        type: "image",
+        source: { type: "base64", media_type: "image/png", data: pngBuffer.toString("base64") },
+      },
       { type: "text", text: "first" },
     ]);
     // Subsequent messages unchanged: plain string content.
     expect(body.messages[1]?.content).toBe("ack");
     expect(body.messages[2]?.content).toBe("second");
+  });
+
+  it("accepts a raw Uint8Array (not just Buffer) as the image data", async () => {
+    const { fetch, calls } = singleResponse({ fixture: "messages_with_image.json" });
+    const provider = new AnthropicProvider({ apiKey: "test-key", fetch });
+    const raw = new Uint8Array([1, 2, 3, 4, 5]);
+    await provider.request({
+      ...baseRequest,
+      attachments: [
+        { kind: "image", source: { type: "base64", data: raw, mimeType: "image/png" } },
+      ],
+    });
+    const recorded = calls[0];
+    if (recorded === undefined) throw new Error("expected one call");
+    const body = recorded.body as { messages: ReadonlyArray<{ role: string; content: unknown }> };
+    const first = body.messages[0];
+    if (first === undefined) throw new Error("expected one message");
+    const content = first.content as ReadonlyArray<unknown>;
+    expect(content[0]).toEqual({
+      type: "image",
+      source: {
+        type: "base64",
+        media_type: "image/png",
+        data: Buffer.from(raw).toString("base64"),
+      },
+    });
   });
 });
 

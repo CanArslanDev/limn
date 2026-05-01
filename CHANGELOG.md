@@ -77,11 +77,13 @@ All notable changes to this project are documented here. Format follows
   now accept `attachments: readonly Attachment[]`. The new `Attachment`
   union ships with `ImageAttachment` (sealed by a `kind` discriminator
   for future file/document variants); each image carries a sealed
-  `ImageSource` (`{ type: "base64", data: Buffer, mimeType }` or
-  `{ type: "url", url }`). The Anthropic adapter translates attachments
-  into vision content blocks on the first user message (images before
-  the text per Anthropic's vision guidance), handling base64 encoding
-  internally so the user never encodes anything by hand. `Attachment`,
+  `ImageSource` (`{ type: "base64", data: Uint8Array, mimeType }`). The
+  Anthropic adapter translates attachments into vision content blocks
+  on the first user message (images before the text per Anthropic's
+  vision guidance), handling base64 encoding internally so the user
+  never encodes anything by hand. URL-based image sources require an
+  SDK version not yet in our peer-dep floor and will land in a future
+  batch as a non-breaking type widening. `Attachment`,
   `ImageAttachment`, `ImageSource`, and `SupportedImageMimeType` are
   re-exported from the package root.
 
@@ -101,9 +103,24 @@ All notable changes to this project are documented here. Format follows
   in the adapter); `AnthropicProvider` + `AnthropicProviderOptions` now
   re-exported from the package root. Fake-fetch test helper extracted to
   `test/_helpers/fake_fetch.ts` for reuse by the OpenAI adapter (batch 1.6).
+- `ImageSource.data` is now typed as `Uint8Array` (Node's `Buffer` still
+  works because `Buffer extends Uint8Array`). The Anthropic adapter now
+  base64-encodes attachments via `Buffer.from(bytes).toString("base64")`
+  so a raw `Uint8Array` is accepted on Node without forcing callers to
+  wrap their bytes in a `Buffer`.
 
 ### Fixed
 
+- Trace pipeline now replaces `Buffer` / `Uint8Array` payloads with a
+  `{ kind: "binary", byteLength }` placeholder in the redactor's deep
+  walk. Previously the walker fell into the generic object branch and
+  enumerated every indexed numeric property of the buffer, bloating a
+  100KB image into a multi-megabyte JSON file (~9-11x). The substitution
+  is intentionally lossy: image bytes carry no information the
+  inspector can render anyway, and the path of every substitution is
+  recorded in `redactedFields` so consumers can grep for binary
+  attachments. With trace on by default, this fix turns image-bearing
+  calls from a CPU + disk hazard into a fixed-cost trace.
 - Hook context no longer leaks the prior failed attempt's `error` into
   `onCallSuccess`/`onCallEnd` after a successful retry recovery. The
   dispatcher now strips `error` and `response` at the top of each retry

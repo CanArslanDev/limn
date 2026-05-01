@@ -21,26 +21,22 @@ export interface ChatMessage {
 export type SupportedImageMimeType = "image/png" | "image/jpeg" | "image/gif" | "image/webp";
 
 /**
- * How an image attachment's bytes reach the provider. Two variants today:
+ * How an image attachment's bytes reach the provider. One variant today:
  *
- * - `base64`: the user supplies raw bytes as a `Buffer` and Limn handles
- *   base64 encoding inside the adapter. Most users land here via
- *   `await fs.readFile("photo.png")`. The brief explicitly forbids manual
- *   encoding at the call site.
- * - `url`: the provider fetches the image from a public URL itself. The
- *   adapter passes the URL through unmodified; the user is responsible for
- *   ensuring the URL is reachable from the provider's network.
+ * - `base64`: the user supplies raw bytes as a `Uint8Array` (Node's `Buffer`
+ *   extends `Uint8Array`, so a `Buffer` from `await fs.readFile(...)` works
+ *   directly). Limn handles base64 encoding inside the adapter; the brief
+ *   explicitly forbids manual encoding at the call site.
+ *
+ * URL-based image sources require an SDK version that is not yet in our
+ * peer-dep floor (`@anthropic-ai/sdk@0.30.x`). When the floor moves, the URL
+ * variant will be added back as a non-breaking type widening.
  */
-export type ImageSource =
-  | {
-      readonly type: "base64";
-      readonly data: Buffer;
-      readonly mimeType: SupportedImageMimeType;
-    }
-  | {
-      readonly type: "url";
-      readonly url: string;
-    };
+export type ImageSource = {
+  readonly type: "base64";
+  readonly data: Uint8Array;
+  readonly mimeType: SupportedImageMimeType;
+};
 
 /**
  * Image attachment block. Today's only `Attachment` variant; the discriminator
@@ -75,7 +71,8 @@ interface BaseCallOptions {
    * Attachments (images today; file/document variants land in later batches)
    * sent with this call. The adapter routes them to the provider's vision /
    * content-block API in a provider-specific shape; the user supplies raw
-   * `Buffer`s or URLs and never encodes anything by hand.
+   * `Uint8Array`s (a Node `Buffer` works because `Buffer extends Uint8Array`)
+   * and never encodes anything by hand.
    */
   readonly attachments?: readonly Attachment[];
 }

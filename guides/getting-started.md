@@ -54,7 +54,7 @@ That's it. With zero configuration, Limn:
 
 ## Sending images
 
-Pass an `attachments` array on any Layer 1 call to send an image alongside the prompt. Limn handles base64 encoding inside the Anthropic adapter, so you supply raw bytes (a `Buffer`) or a URL the provider can fetch.
+Pass an `attachments` array on any Layer 1 call to send an image alongside the prompt. Limn handles base64 encoding inside the Anthropic adapter, so you supply raw bytes as a `Uint8Array`. A Node `Buffer` works directly because `Buffer extends Uint8Array`.
 
 ```ts
 import { ai } from "limn";
@@ -70,6 +70,8 @@ const description = await ai.ask("Describe this image:", {
 ```
 
 Multiple images attach in order; they appear before the prompt text on the request the provider sees. See [API surface reference](api-surface.md) for the full `Attachment` union and the `image/png` / `image/jpeg` / `image/gif` / `image/webp` MIME types accepted today.
+
+Image attachments today require a Node runtime: the adapter routes bytes through `Buffer.from(...)` to base64-encode them. Edge and browser portability is part of the broader Limn portability story and is tracked separately. URL-based image sources also live in a future batch (the pinned Anthropic SDK floor does not declare them yet).
 
 ## Tracing
 

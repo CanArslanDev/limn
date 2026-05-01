@@ -226,14 +226,17 @@ export const ai: Ai = {
     return result.content;
   },
 
+  // TODO(batch-1.7): plumb options.attachments through to the request, mirroring ai.ask.
   async chat(_messages, _options) {
     return notImplemented("chat");
   },
 
+  // TODO(batch-1.7): plumb options.attachments through to the request, mirroring ai.ask.
   async extract(_schema, _input, _options) {
     return notImplemented("extract");
   },
 
+  // TODO(batch-1.7): plumb options.attachments through to the request, mirroring ai.ask.
   stream(_prompt, _options) {
     throw new Error("ai.stream is not implemented yet (Phase 1).");
   },

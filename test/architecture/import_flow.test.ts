@@ -50,7 +50,7 @@ const LAYER_RULES: readonly LayerRule[] = [
   { layer: "providers/provider.ts", mayImportFrom: ["providers", "client/options"] },
   { layer: "providers/registry.ts", mayImportFrom: ["providers", "errors"] },
   { layer: "providers/anthropic", mayImportFrom: ["providers", "errors", "client/options"] },
-  { layer: "providers/openai", mayImportFrom: ["providers", "errors", "client/options"] },
+  { layer: "providers/openai", mayImportFrom: ["providers", "errors"] },
   { layer: "providers/_mock", mayImportFrom: ["providers", "errors"] },
   { layer: "config", mayImportFrom: ["providers/model_name"] },
   { layer: "agent", mayImportFrom: ["agent", "providers/model_name", "errors"] },

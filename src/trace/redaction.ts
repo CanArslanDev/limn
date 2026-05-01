@@ -82,6 +82,19 @@ function walk(
   if (typeof node === "string") {
     return redactString(node, path, sink);
   }
+  // Binary payloads (Buffer / Uint8Array) are detected BEFORE the
+  // object-walk branch. Without this guard, `Object.entries(buffer)`
+  // enumerates indexed numeric properties and the cleaned tree balloons
+  // into `{"0": 137, "1": 80, ...}` (about 9-11x the original bytes
+  // serialized as JSON). The substitution is intentionally lossy: image
+  // bytes carry no information the inspector can render anyway, and we
+  // record the path in `sink` so consumers can grep `redactedFields`
+  // for binary substitution sites. Buffer extends Uint8Array, so the
+  // `instanceof Uint8Array` check catches both.
+  if (node instanceof Uint8Array) {
+    sink.push(path);
+    return { kind: "binary", byteLength: node.byteLength };
+  }
   if (Array.isArray(node)) {
     const existing = seen.get(node);
     if (existing !== undefined) return existing;

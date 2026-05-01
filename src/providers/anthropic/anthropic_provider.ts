@@ -312,21 +312,20 @@ export class AnthropicProvider implements Provider {
 
 /**
  * Anthropic content block emitted on a `role: "user"` message when the request
- * carries attachments. The SDK accepts `content: string` (no attachments) or
- * `content: Array<{ type: "text"; text } | { type: "image"; source }>` (mixed).
- * The two helpers below translate the Limn shapes into the latter when
- * attachments are present.
+ * carries attachments. The SDK (pinned floor `@anthropic-ai/sdk@0.30.x`)
+ * accepts `content: string` (no attachments) or
+ * `content: Array<{ type: "text"; text } | { type: "image"; source }>`
+ * (mixed). The base64 source variant is the only one shipped today; URL
+ * sources require a newer SDK floor.
  */
-type AnthropicImageBlock =
-  | {
-      readonly type: "image";
-      readonly source: {
-        readonly type: "base64";
-        readonly media_type: string;
-        readonly data: string;
-      };
-    }
-  | { readonly type: "image"; readonly source: { readonly type: "url"; readonly url: string } };
+type AnthropicImageBlock = {
+  readonly type: "image";
+  readonly source: {
+    readonly type: "base64";
+    readonly media_type: string;
+    readonly data: string;
+  };
+};
 
 type AnthropicTextBlock = { readonly type: "text"; readonly text: string };
 
@@ -365,29 +364,40 @@ function buildSdkMessages(
 }
 
 /**
+ * Encode a `Uint8Array` (or `Buffer`, which extends it) to base64. `Buffer`'s
+ * `toString("base64")` is Node-specific and does NOT exist on a raw
+ * `Uint8Array`, so we route every byte payload through `Buffer.from(bytes)`
+ * which accepts both. This keeps the `ImageSource.data` type widened to
+ * `Uint8Array` (more portable, still type-compatible with any caller passing
+ * a `Buffer`) without paying the cost of the slow
+ * `btoa(String.fromCharCode(...bytes))` path; image attachments are a Node
+ * feature today and the broader edge/browser portability story is tracked
+ * separately.
+ */
+function toBase64(bytes: Uint8Array): string {
+  return Buffer.from(bytes).toString("base64");
+}
+
+/**
  * Translate one Limn `Attachment` to its Anthropic content-block shape.
  * Pulled out for testability and to keep `buildSdkMessages` focused on
  * placement (which message the blocks attach to) rather than per-attachment
  * shape conversion.
  */
 function toAnthropicAttachmentBlock(att: Attachment): AnthropicImageBlock {
-  // Today the union has one variant; the discriminator branch reads as a
-  // single arm. When file/document attachments land in a future batch they
-  // get their own arms and Anthropic's `document` content block.
+  // Today the attachment union has one `kind` and the source union has one
+  // `type`; the branches read as single arms. URL-based image sources
+  // require a newer SDK than our pinned floor and are deliberately deferred.
+  // When file/document attachments land in a future batch they get their
+  // own arms and Anthropic's `document` content block.
   if (att.kind === "image") {
-    if (att.source.type === "base64") {
-      return {
-        type: "image",
-        source: {
-          type: "base64",
-          media_type: att.source.mimeType,
-          data: att.source.data.toString("base64"),
-        },
-      };
-    }
     return {
       type: "image",
-      source: { type: "url", url: att.source.url },
+      source: {
+        type: "base64",
+        media_type: att.source.mimeType,
+        data: toBase64(att.source.data),
+      },
     };
   }
   // The union is exhaustive today; this satisfies the never-check that

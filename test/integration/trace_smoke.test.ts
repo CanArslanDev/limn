@@ -122,4 +122,49 @@ describe("ai.ask trace integration (FileSystemTraceSink + RedactionHook)", () =>
     const persisted = record.request as { messages: Array<{ content: string }> };
     expect(persisted.messages[0]?.content).toBe("Use [REDACTED] to authenticate");
   });
+
+  // Regression for the C1 fix: image attachments must NOT be deep-cloned
+  // through the redactor's object-walk branch. Without the binary guard,
+  // a 1KB Buffer enumerates as `{"0":..,"1":..,...}` and bloats the
+  // persisted JSON by ~9-11x. The guard substitutes a placeholder so the
+  // trace stays small and parses cleanly.
+  it("substitutes attachment Buffers with a binary placeholder so traces stay small", async () => {
+    mock.pushResponse({
+      content: "ok",
+      toolCalls: [],
+      stopReason: "end",
+      usage: { inputTokens: 1, outputTokens: 1 },
+    });
+
+    await ai.ask("describe this", {
+      attachments: [
+        {
+          kind: "image",
+          source: { type: "base64", data: Buffer.alloc(1024), mimeType: "image/png" },
+        },
+      ],
+    });
+
+    const files = (await readdir(dir)).filter((n) => n.endsWith(".json"));
+    expect(files).toHaveLength(1);
+    const fileName = files[0];
+    if (fileName === undefined) throw new Error("expected one trace file");
+    const filePath = join(dir, fileName);
+
+    const { stat } = await import("node:fs/promises");
+    const stats = await stat(filePath);
+    // Sanity threshold: with the placeholder the file is well under 1KB;
+    // without the guard a 1KB Buffer would inflate to ~10KB+ on disk.
+    expect(stats.size).toBeLessThan(5_000);
+
+    const raw = await readFile(filePath, "utf8");
+    const record = JSON.parse(raw) as TraceRecord;
+    const persisted = record.request as {
+      attachments: Array<{
+        source: { type: string; data: { kind: string; byteLength: number }; mimeType: string };
+      }>;
+    };
+    expect(persisted.attachments[0]?.source.data).toEqual({ kind: "binary", byteLength: 1024 });
+    expect(record.redactedFields).toContain("request.attachments.0.source.data");
+  });
 });

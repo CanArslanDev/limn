@@ -21,7 +21,7 @@ Two overloads:
 
 #### Image attachments
 
-Every Layer 1 call accepts `attachments: readonly Attachment[]` to send images alongside the prompt. Limn handles base64 encoding inside the adapter; you supply raw `Buffer`s or URLs and never encode anything by hand.
+Every Layer 1 call accepts `attachments: readonly Attachment[]` to send images alongside the prompt. Limn handles base64 encoding inside the adapter; you supply raw bytes (a `Uint8Array`, or a Node `Buffer` since `Buffer extends Uint8Array`) and never encode anything by hand.
 
 ```ts
 import { ai } from "limn";
@@ -36,17 +36,9 @@ const description = await ai.ask("Describe this image:", {
 });
 ```
 
-URL form for a remote image the provider can fetch itself:
+The `Attachment` union is sealed by the `kind` discriminator so future file and document variants land without breaking changes. Today only `kind: "image"` is supported. `ImageSource` is sealed by its own `type` discriminator; `base64` is the only variant shipped today and `mimeType` accepts `image/png`, `image/jpeg`, `image/gif`, or `image/webp`. The adapter places image blocks before the text on the first user message in the request, mirroring Anthropic's vision guidance.
 
-```ts
-const caption = await ai.ask("Caption this:", {
-  attachments: [
-    { kind: "image", source: { type: "url", url: "https://example.com/cat.jpg" } },
-  ],
-});
-```
-
-The `Attachment` union is sealed by the `kind` discriminator so future file and document variants land without breaking changes. Today only `kind: "image"` is supported. `ImageSource` is sealed by its own `type` discriminator (`base64` or `url`); `mimeType` on the base64 variant accepts `image/png`, `image/jpeg`, `image/gif`, or `image/webp`. The adapter places image blocks before the text on the first user message in the request, mirroring Anthropic's vision guidance.
+URL-based image sources require an SDK version that is not yet in our peer-dep floor; coming in a future release.
 
 ### `ai.chat(messages, options?) -> Promise<string>`
 

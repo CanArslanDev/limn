@@ -85,30 +85,6 @@ describe("ai.ask attachments smoke (MockProvider)", () => {
     expect(att.source.data).toBe(pngBuffer);
   });
 
-  it("passes a URL image attachment through to the provider request", async () => {
-    mock.pushResponse({
-      content: "I see a remote image.",
-      toolCalls: [],
-      stopReason: "end",
-      usage: { inputTokens: 1, outputTokens: 1 },
-    });
-
-    await ai.ask("describe this", {
-      attachments: [
-        {
-          kind: "image",
-          source: { type: "url", url: "https://example.com/cat.jpg" },
-        },
-      ],
-    });
-
-    const captured = mock.requests[0];
-    if (captured === undefined) throw new Error("expected one captured request");
-    expect(captured.attachments).toEqual([
-      { kind: "image", source: { type: "url", url: "https://example.com/cat.jpg" } },
-    ]);
-  });
-
   it("omits attachments from the provider request when not supplied", async () => {
     mock.pushResponse({
       content: "no image",
