@@ -8,6 +8,14 @@ All notable changes to this project are documented here. Format follows
 
 ### Added
 
+### Changed
+
+### Fixed
+
+## [0.1.0] - 2026-04-29 - layer 1 + anthropic + openai + minimal trace
+
+### Added
+
 - Repository scaffold: TypeScript project layout, `tsup` build, `vitest` test
   runner, `biome` lint + format, GitHub Actions CI pipeline, issue and PR
   templates, contribution + security + code-of-conduct policies.
@@ -246,4 +254,5 @@ All notable changes to this project are documented here. Format follows
   records (one per chat attempt). Inspector linkage between sibling
   attempts is deferred to Phase 2.
 
-[Unreleased]: https://github.com/CanArslanDev/limn/compare/HEAD...HEAD
+[Unreleased]: https://github.com/CanArslanDev/limn/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/CanArslanDev/limn/releases/tag/v0.1.0

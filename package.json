@@ -1,6 +1,6 @@
 {
   "name": "limn",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "TypeScript-first library for building, debugging, and operating LLM applications. Limn your AI.",
   "license": "MIT",
   "author": "Can Arslan <can.arslan@nodelabs.software>",

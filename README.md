@@ -39,13 +39,17 @@ pnpm add limn
 yarn add limn
 ```
 
-The package is pre-publication; until the first tagged release lands on npm, depend on the GitHub commit:
+Until the first tagged release lands on npm, depend on the GitHub tag directly:
 
 ```bash
-npm install github:CanArslanDev/limn
+npm install github:CanArslanDev/limn#v0.1.0
 ```
 
 Set your provider keys via environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`), via `limn.config.ts`, or per call. See [`guides/getting-started.md`](guides/getting-started.md) for the full configuration walkthrough.
+
+## Current release
+
+v0.1.0 ships Layer 1 (`ai.ask`, `ai.chat`, `ai.stream`, `ai.extract`) against Anthropic and OpenAI, with image attachments, an exponential-backoff retry policy, the local trace pipeline (filesystem JSON sink with API-key redaction), `limn.config.ts` discovery with per-call overrides, and the seven-variant `LimnError` hierarchy. The `npx limn inspect` UI, agents and tools, and the hosted backend follow in later phases.
 
 ## Detailed documentation
 
@@ -170,8 +174,8 @@ Architecture invariants (imports flow downward only) are enforced by `test/archi
 | Phase | Scope                                                | Target |
 | ----- | ---------------------------------------------------- | ------ |
 | 0     | Reserve names, scaffold repo, CI, placeholder npm    | done   |
-| 1     | Layer 1 + minimal trace JSON on disk                 | next   |
-| 2     | `npx limn inspect` local debug UI                    |        |
+| 1     | Layer 1 + minimal trace JSON on disk                 | done   |
+| 2     | `npx limn inspect` local debug UI                    | next   |
 | 3     | Agents + tools + typed multi-turn loops              |        |
 | 4     | `npx limn init` CLI templates                        |        |
 | 5     | Hosted observability (opt-in)                        |        |
