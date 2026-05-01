@@ -2,7 +2,7 @@
 
 Copy-paste recipes for common Limn patterns. Each recipe is self-contained and tested against the public surface.
 
-> Phase 1 placeholders. The recipes will run once the providers ship.
+> As of batch 1.7 every recipe below runs end-to-end against Anthropic and OpenAI when the corresponding API key is set.
 
 ## Run multiple prompts in parallel
 

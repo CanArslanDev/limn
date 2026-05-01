@@ -43,7 +43,12 @@
 
 import type { Attachment, ChatMessage } from "../../client/options.js";
 import { AuthError, ModelTimeoutError, ProviderError, RateLimitError } from "../../errors/index.js";
-import type { Provider, ProviderRequest, ProviderResponse } from "../provider.js";
+import type {
+  Provider,
+  ProviderRequest,
+  ProviderResponse,
+  ProviderStreamResult,
+} from "../provider.js";
 
 /**
  * Constructor options for {@link OpenAIProvider}. Options-object shape
@@ -90,6 +95,19 @@ interface SdkChatCompletionResponse {
 }
 
 type SdkFinishReason = "stop" | "length" | "tool_calls" | "content_filter" | "function_call";
+
+/**
+ * Structural narrowing of OpenAI's `ChatCompletionChunk` shape that the
+ * streaming adapter consumes. The SDK type is much wider; we narrow to the
+ * three fields we read so a future SDK reorganization surfaces here as a
+ * type error rather than silently mis-routing tokens.
+ */
+interface SdkChatCompletionChunk {
+  readonly choices?: ReadonlyArray<{
+    readonly delta?: { readonly content?: string | null };
+  }>;
+  readonly usage?: { readonly prompt_tokens?: number; readonly completion_tokens?: number } | null;
+}
 
 /**
  * Subset of the SDK error-class surface the adapter touches. The SDK exposes
@@ -251,11 +269,122 @@ export class OpenAIProvider implements Provider {
   }
 
   /**
-   * Streaming is wired in batch 1.7. Today this throws so callers get a
-   * deterministic error instead of an SDK call mid-flight.
+   * Begin a streaming request against OpenAI's `chat.completions.create({
+   * stream: true, stream_options: { include_usage: true } })` endpoint.
+   * Returns the two-channel result from the Provider contract: `stream` is
+   * the iterator of textual deltas, `usage` is the promise that resolves
+   * once the stream drains with cumulative tokens.
+   *
+   * OpenAI's stream emits `ChatCompletionChunk`s; each chunk has a
+   * `choices[0].delta.content` field that carries the textual delta when
+   * present (it is null for the first chunk and for tool-call chunks).
+   * Setting `stream_options.include_usage: true` makes the SDK emit a
+   * final chunk with no choices and a populated `usage` object; we read
+   * tokens from that chunk to resolve the usage promise.
+   *
+   * Error mapping mirrors `request()`: SDK-level errors translate through
+   * `mapSdkError`. Pre-stream failures (auth, missing peer dep) surface by
+   * making the iterator's first `next()` throw; the dispatcher's stream
+   * loop treats that as a first-chunk failure and consults the retry
+   * strategy. Mid-stream errors propagate from the iterator and never
+   * retry (chunks have already reached the consumer).
    */
-  public stream(_req: ProviderRequest): AsyncIterable<string> {
-    throw new ProviderError("OpenAIProvider.stream is not implemented yet (batch 1.7).", "openai");
+  public requestStream(req: ProviderRequest): ProviderStreamResult {
+    // Promise.withResolvers-style hand-roll: the executor runs synchronously
+    // so the assignments below complete before the generator body runs.
+    // Definite-assignment assertions document this for TS.
+    let usageResolve!: (value: {
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    }) => void;
+    let usageReject!: (reason: unknown) => void;
+    const usage = new Promise<{
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    }>((resolve, reject) => {
+      usageResolve = resolve;
+      usageReject = reject;
+    });
+    const self = this;
+    const stream = (async function* openaiStream(): AsyncIterable<string> {
+      if (self.apiKey === undefined || self.apiKey === "") {
+        const err = new AuthError("OPENAI_API_KEY env var not set; cannot reach OpenAI.");
+        usageReject(err);
+        throw err;
+      }
+      for (const m of req.messages) {
+        if (m.role === "system") {
+          const err = new ProviderError(
+            "OpenAI does not accept role 'system' inside ProviderRequest.messages here; pass system instructions via ProviderRequest.system instead.",
+            "openai",
+            undefined,
+            false,
+          );
+          usageReject(err);
+          throw err;
+        }
+      }
+      let state: CachedSdkState;
+      try {
+        state = await self.ensureState();
+      } catch (err) {
+        usageReject(err);
+        throw err;
+      }
+      const { errors: errs } = state;
+      const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), timeoutMs);
+
+      const sdkRequest = {
+        model: req.model,
+        max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+        messages: buildSdkMessages(req.messages, req.attachments, req.system),
+        stream: true as const,
+        stream_options: { include_usage: true },
+        ...(req.temperature === undefined ? {} : { temperature: req.temperature }),
+      };
+
+      let inputTokens = 0;
+      let outputTokens = 0;
+      try {
+        // SDK-boundary cast: `chat.completions.create({ stream: true })`
+        // returns an async iterable of ChatCompletionChunk.
+        const sdkClient = state.client as {
+          readonly chat: {
+            readonly completions: {
+              create(
+                req: unknown,
+                opts: { signal: AbortSignal },
+              ): Promise<AsyncIterable<SdkChatCompletionChunk>>;
+            };
+          };
+        };
+        const sdkStream = await sdkClient.chat.completions.create(sdkRequest, {
+          signal: ac.signal,
+        });
+        for await (const chunk of sdkStream) {
+          // Usage-only final chunk (when `stream_options.include_usage` is
+          // set) carries no choices and a populated usage object.
+          if (chunk.usage !== undefined && chunk.usage !== null) {
+            inputTokens = chunk.usage.prompt_tokens ?? inputTokens;
+            outputTokens = chunk.usage.completion_tokens ?? outputTokens;
+          }
+          const deltaText = chunk.choices?.[0]?.delta?.content;
+          if (typeof deltaText === "string" && deltaText.length > 0) {
+            yield deltaText;
+          }
+        }
+        usageResolve({ inputTokens, outputTokens });
+      } catch (err) {
+        const mapped = mapSdkError(err, errs, timeoutMs);
+        usageReject(mapped);
+        throw mapped;
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
+    return { stream, usage };
   }
 
   /**

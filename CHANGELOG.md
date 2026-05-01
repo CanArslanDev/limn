@@ -86,6 +86,50 @@ All notable changes to this project are documented here. Format follows
   batch as a non-breaking type widening. `Attachment`,
   `ImageAttachment`, `ImageSource`, and `SupportedImageMimeType` are
   re-exported from the package root.
+- `ai.chat(messages, options?)` is now wired end-to-end against any
+  registered provider. A `role: "system"` message in the array routes to
+  the provider's dedicated system channel (Anthropic's top-level `system`
+  field; OpenAI's leading system message); when no in-array system message
+  is present, `options.system` takes effect. Multi-turn `user` /
+  `assistant` history forwards verbatim. Retry, trace, redaction, and
+  timeout behavior matches `ai.ask`; the dispatcher records the call as
+  `kind: "chat"`.
+- `ai.extract(schema, input, options?)` is now wired end-to-end. The flow
+  builds a JSON-Schema description of the supplied Zod schema (via a
+  hand-rolled converter under `src/extract/zod_to_json_schema.ts`,
+  intentionally avoiding a new runtime dependency per the project's dep
+  policy), uses it as the system prompt, parses the model response, and
+  validates with `schema.safeParse`. Validation failures throw
+  `SchemaValidationError` carrying `expectedSchemaName` (read from
+  `schema.describe(...)` when present, else the Zod typeName) and
+  `actualPayload` (the parsed object or `null` when the response was not
+  JSON). With `retryOnSchemaFailure: true` the orchestration appends the
+  prior response and the validation message to the conversation and
+  re-issues the chat call once; a second failure surfaces the second
+  payload via `SchemaValidationError`. The converter supports Zod 3
+  primitives, objects (with optional fields), arrays, unions, literals,
+  enums, and the common string formats (email, url, uuid); shapes
+  outside the subset fall back to a wide `{ type: "object" }` hint.
+- `ai.stream(prompt, options?)` is now wired end-to-end. Returns an
+  `AsyncIterable<string>` that yields textual deltas as they arrive;
+  `options.onChunk` (when supplied) fires once per chunk before the
+  iterator yields, so callback-only consumers can drive the stream with
+  an empty loop body. The `Provider` interface gained a `requestStream`
+  method returning a `{ stream, usage }` pair (the existing throw-only
+  `stream` placeholder was removed). The Anthropic adapter consumes the
+  SDK's typed event union (`message_start` / `content_block_delta` /
+  `message_delta`) and yields `text_delta` payloads; the OpenAI adapter
+  reads `choices[0].delta.content` per chunk and reads usage from the
+  terminal chunk emitted under `stream_options.include_usage`. The
+  `HookDispatcher` gained `runStream`, mirroring `run`'s lifecycle phases
+  with stream-aware retry: a failure BEFORE any chunk emits consults the
+  retry strategy exactly like a non-streaming call, while a failure
+  AFTER any chunk has yielded surfaces immediately (re-issuing would
+  duplicate output for the consumer).
+- `MockProvider` now scripts streams via `pushStreamChunks(chunks, usage,
+  errorAfterChunks?)` and `pushStreamError(err)`, captures requests in
+  `streamRequests`, and implements `requestStream` so integration tests
+  drive `ai.stream` end-to-end without a network call.
 - OpenAI provider adapter wraps `openai`'s chat completions API and
   mirrors the Anthropic adapter shape one-to-one: lazy SDK import,
   cached client + error-class table, fetch-injection seam for tests,
@@ -106,6 +150,14 @@ All notable changes to this project are documented here. Format follows
 
 ### Changed
 
+- `Provider` interface: replaced `stream(req): AsyncIterable<string>` with
+  `requestStream(req): { stream, usage }`. The two-channel shape lets the
+  dispatcher consume token-by-token deltas via the `stream` channel and
+  capture usage tokens at end-of-stream via the `usage` promise without
+  squeezing a sentinel into the chunk type. Both shipped adapters
+  implement the new method; the previous placeholder `stream` arms (which
+  always threw "not implemented yet (batch 1.7)") are removed. No public
+  consumers of the old method existed.
 - Replaced `vi.mock("@anthropic-ai/sdk")` in the Anthropic adapter unit
   tests with a fake-`fetch` injection that replays recorded JSON fixtures
   through the real SDK. The SDK runs unmodified, so its real error

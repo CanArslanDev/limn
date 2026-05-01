@@ -411,9 +411,27 @@ describe("OpenAIProvider attachments", () => {
   });
 });
 
-describe("OpenAIProvider stream", () => {
-  it("throws ProviderError noting batch 1.7", () => {
+describe("OpenAIProvider requestStream", () => {
+  it("returns a {stream, usage} pair the dispatcher can consume", () => {
     const provider = new OpenAIProvider({ apiKey: "test-key" });
-    expect(() => provider.stream(baseRequest)).toThrow(/batch 1\.7/);
+    const result = provider.requestStream(baseRequest);
+    expect(result.stream).toBeDefined();
+    expect(typeof (result.stream as AsyncIterable<string>)[Symbol.asyncIterator]).toBe("function");
+    expect(result.usage).toBeInstanceOf(Promise);
+    // Suppress unhandled rejection: this test never iterates the stream
+    // (and thus never triggers the SDK call), so we discard both channels.
+    result.usage.catch(() => {
+      // intentional swallow: this test never iterates the stream
+    });
+  });
+
+  it("surfaces missing apiKey via AuthError on first iterator next()", async () => {
+    const provider = new OpenAIProvider({ apiKey: undefined });
+    const { stream, usage } = provider.requestStream(baseRequest);
+    usage.catch(() => {
+      // intentional swallow: assert is on iterator next()
+    });
+    const iter = (stream as AsyncIterable<string>)[Symbol.asyncIterator]();
+    await expect(iter.next()).rejects.toBeInstanceOf(AuthError);
   });
 });

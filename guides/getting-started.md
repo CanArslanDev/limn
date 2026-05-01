@@ -136,6 +136,32 @@ Per-error-type policy on the default strategy:
 - `ModelTimeoutError`: retries only when `retry.maxAttempts >= 4`. The cap is `floor(maxAttempts / 2)` total attempts and a `ModelTimeoutError` surfaces once `attempt >= cap`, so with the default `maxAttempts: 3` the cap is `1` and the first timeout surfaces immediately. Bump `retry.maxAttempts` if you want any timeout retry budget; timeouts are usually deterministic so the policy halves the budget by design.
 - `SchemaValidationError`: not transport-level; retried by `ai.extract` only when `retryOnSchemaFailure: true` is set on the call.
 
+## The other Layer 1 entry points
+
+`ai.ask` is the simplest call. The other three round out Layer 1:
+
+```ts
+import { ai } from "limn";
+import { z } from "zod";
+
+// Multi-turn conversation
+const reply = await ai.chat([
+  { role: "system", content: "You are a curt RLHF tutor." },
+  { role: "user", content: "What is RLHF?" },
+]);
+
+// Schema-validated extraction
+const Person = z.object({ name: z.string(), email: z.string().email() });
+const person = await ai.extract(Person, resumeText);
+
+// Token-by-token streaming
+for await (const chunk of ai.stream("Write a haiku")) {
+  process.stdout.write(chunk);
+}
+```
+
+All four entry points share the same retry, trace, and timeout pipeline. See [API surface reference](api-surface.md) for the full options.
+
 ## Where to go next
 
 - [API surface reference](api-surface.md) for the full list of functions on `ai`.

@@ -15,7 +15,25 @@
  */
 
 import { ProviderError } from "../../errors/index.js";
-import type { Provider, ProviderRequest, ProviderResponse } from "../provider.js";
+import type {
+  Provider,
+  ProviderRequest,
+  ProviderResponse,
+  ProviderStreamResult,
+} from "../provider.js";
+
+/**
+ * Scripted stream payload. `chunks` are yielded in order; `usage` resolves
+ * the {@link ProviderStreamResult.usage} promise once the iterator drains.
+ * `errorAfterChunks`, when set, makes the iterator throw it AFTER yielding
+ * `chunks` (mid-stream failure scripting); the usage promise rejects with
+ * the same error so callers awaiting it see the failure too.
+ */
+interface StreamScript {
+  readonly chunks: readonly string[];
+  readonly usage: { readonly inputTokens: number; readonly outputTokens: number };
+  readonly errorAfterChunks?: Error;
+}
 
 /**
  * Programmable provider used exclusively by tests. Push responses or errors
@@ -34,6 +52,11 @@ export class MockProvider implements Provider {
   private readonly _responses: ProviderResponse[] = [];
   private readonly _errors: Error[] = [];
   private readonly _requests: ProviderRequest[] = [];
+  // Stream queues live alongside the request queues. Stream errors win over
+  // chunk scripts when both are queued, mirroring the request/error semantics.
+  private readonly _streamScripts: StreamScript[] = [];
+  private readonly _streamErrors: Error[] = [];
+  private readonly _streamRequests: ProviderRequest[] = [];
 
   /** Queued responses. FIFO. Read-only at the public surface. */
   public get responses(): readonly ProviderResponse[] {
@@ -46,6 +69,10 @@ export class MockProvider implements Provider {
   /** Captured incoming requests in arrival order. Useful for assertions. */
   public get requests(): readonly ProviderRequest[] {
     return this._requests;
+  }
+  /** Captured incoming streaming requests in arrival order. */
+  public get streamRequests(): readonly ProviderRequest[] {
+    return this._streamRequests;
   }
 
   /**
@@ -67,11 +94,41 @@ export class MockProvider implements Provider {
     this._errors.push(error);
   }
 
+  /**
+   * Script the next streaming call. The chunks are yielded in order;
+   * `usage` resolves the {@link ProviderStreamResult.usage} promise once
+   * the iterator drains. When `errorAfterChunks` is supplied the iterator
+   * throws it AFTER yielding `chunks` (mid-stream failure scripting).
+   */
+  public pushStreamChunks(
+    chunks: readonly string[],
+    usage: { readonly inputTokens: number; readonly outputTokens: number },
+    errorAfterChunks?: Error,
+  ): void {
+    this._streamScripts.push({
+      chunks,
+      usage,
+      ...(errorAfterChunks === undefined ? {} : { errorAfterChunks }),
+    });
+  }
+
+  /**
+   * Script the next streaming call to throw immediately on the first
+   * iteration. Used to exercise the dispatcher's first-chunk retry path:
+   * a stream that fails before any chunk emits should be safe to re-issue.
+   */
+  public pushStreamError(error: Error): void {
+    this._streamErrors.push(error);
+  }
+
   /** Clear every queue and the captured requests array. Call between tests. */
   public reset(): void {
     this._responses.length = 0;
     this._errors.length = 0;
     this._requests.length = 0;
+    this._streamScripts.length = 0;
+    this._streamErrors.length = 0;
+    this._streamRequests.length = 0;
   }
 
   public async request(req: ProviderRequest): Promise<ProviderResponse> {
@@ -92,7 +149,83 @@ export class MockProvider implements Provider {
     );
   }
 
-  public stream(_req: ProviderRequest): AsyncIterable<string> {
-    throw new ProviderError("MockProvider.stream not yet implemented (batch 1.7).", this.name);
+  /**
+   * Begin a scripted streaming call. Captures `req` in `streamRequests` and
+   * returns the two-channel result. Failure modes:
+   *   - `pushStreamError(err)` makes the next call throw `err` synchronously
+   *     (well, on the first iteration of the returned iterator); the usage
+   *     promise rejects with the same error.
+   *   - `pushStreamChunks(chunks, usage, errorAfterChunks?)` yields chunks
+   *     in order, then either resolves usage or throws `errorAfterChunks`
+   *     after the chunks (mid-stream failure scripting).
+   *   - No script queued -> the iterator throws `ProviderError`.
+   */
+  public requestStream(req: ProviderRequest): ProviderStreamResult {
+    this._streamRequests.push(req);
+
+    if (this._streamErrors.length > 0) {
+      // biome-ignore lint/style/noNonNullAssertion: length check on previous line guarantees non-empty
+      const queuedError = this._streamErrors.shift()!;
+      const failOnFirstNext = (async function* failingStream(): AsyncIterable<string> {
+        throw queuedError;
+        // Unreachable yield to satisfy AsyncIterable typing in some runtimes.
+        // biome-ignore lint/correctness/noUnreachable: typing aid; never executes
+        yield "";
+      })();
+      return {
+        stream: failOnFirstNext,
+        usage: Promise.reject(queuedError),
+      };
+    }
+
+    if (this._streamScripts.length === 0) {
+      const err = new ProviderError(
+        "MockProvider has no queued stream script. Call pushStreamChunks() or pushStreamError() before invoking.",
+        this.name,
+      );
+      const failOnFirstNext = (async function* failingStream(): AsyncIterable<string> {
+        throw err;
+        // biome-ignore lint/correctness/noUnreachable: typing aid; never executes
+        yield "";
+      })();
+      return {
+        stream: failOnFirstNext,
+        usage: Promise.reject(err),
+      };
+    }
+
+    // biome-ignore lint/style/noNonNullAssertion: length check on previous line guarantees non-empty
+    const script = this._streamScripts.shift()!;
+    // Promise.withResolvers-style hand-roll: the executor runs synchronously
+    // so resolve/reject are guaranteed to be assigned before the generator
+    // body below runs. Definite-assignment assertions document this for TS.
+    let usageResolve!: (value: {
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    }) => void;
+    let usageReject!: (reason: unknown) => void;
+    const usagePromise = new Promise<{
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    }>((resolve, reject) => {
+      usageResolve = resolve;
+      usageReject = reject;
+    });
+    const stream = (async function* scriptedStream(): AsyncIterable<string> {
+      try {
+        for (const chunk of script.chunks) {
+          yield chunk;
+        }
+        if (script.errorAfterChunks !== undefined) {
+          usageReject(script.errorAfterChunks);
+          throw script.errorAfterChunks;
+        }
+        usageResolve(script.usage);
+      } catch (err) {
+        usageReject(err);
+        throw err;
+      }
+    })();
+    return { stream, usage: usagePromise };
   }
 }

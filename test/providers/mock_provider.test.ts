@@ -74,9 +74,33 @@ describe("MockProvider", () => {
     expect(mock.requests).toHaveLength(0);
   });
 
-  it("stream() throws a not-yet-implemented ProviderError", () => {
+  it("requestStream() yields scripted chunks and resolves usage", async () => {
     const mock = new MockProvider();
-    expect(() => mock.stream(sampleRequest)).toThrow(/not yet implemented/);
+    mock.pushStreamChunks(["a", "b", "c"], { inputTokens: 1, outputTokens: 3 });
+
+    const { stream, usage } = mock.requestStream(sampleRequest);
+    const collected: string[] = [];
+    for await (const chunk of stream) {
+      collected.push(chunk);
+    }
+    expect(collected).toEqual(["a", "b", "c"]);
+    await expect(usage).resolves.toEqual({ inputTokens: 1, outputTokens: 3 });
+    expect(mock.streamRequests).toHaveLength(1);
+  });
+
+  it("requestStream() with no script throws a clear ProviderError", async () => {
+    const mock = new MockProvider();
+    const { stream, usage } = mock.requestStream(sampleRequest);
+    // Suppress unhandled rejection on the usage promise; the iterator's
+    // first next() carries the same error to the caller.
+    usage.catch(() => {
+      // intentional swallow: the iterator carries the error
+    });
+    await expect(async () => {
+      for await (const _ of stream) {
+        // unreachable
+      }
+    }).rejects.toThrow(/no queued stream script/);
   });
 
   it("constructs as the openai provider when requested", () => {

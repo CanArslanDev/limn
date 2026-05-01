@@ -188,6 +188,103 @@ export class HookDispatcher {
    * dispatcher sleeps for the strategy's returned delay and increments the
    * attempt counter before invoking `exec` again.
    */
+  /**
+   * Streaming counterpart of {@link run}. The supplied `exec` returns a
+   * `{ stream, finalize }` pair per attempt: `stream` is the user-iterable
+   * channel of textual chunks, `finalize` resolves once the stream drains
+   * with the cumulative token counts so the trace hook can record them.
+   *
+   * Retry semantics match {@link run} for **first-chunk** failures only:
+   * if the iterator's first `next()` throws before any chunk yields, the
+   * dispatcher consults the retry strategy and (if it says retry) calls
+   * `exec` again with a bumped attempt counter. Once any chunk has been
+   * yielded to the consumer the dispatcher treats subsequent failures as
+   * terminal: re-issuing would duplicate output, so the error surfaces
+   * straight to the consumer and `onCallError`/`onCallEnd` fire normally.
+   *
+   * The lifecycle phases mirror {@link run}: `onCallStart` once at entry,
+   * `onCallSuccess` once at clean end-of-stream (with `ctx.response`
+   * populated from the finalize result), `onCallError` on terminal failure,
+   * `onCallEnd` always in finally. `onRetry` fires between attempts when
+   * the strategy approves a retry.
+   *
+   * The returned async iterable is single-use; iterating it twice is a
+   * caller bug (would re-fire the dispatcher entirely). This mirrors the
+   * SDK-level streaming iterators.
+   */
+  public async *runStream(
+    initialCtx: Omit<HookContext, "attempt" | "response" | "error">,
+    exec: (attempt: number) => {
+      readonly stream: AsyncIterable<string>;
+      readonly finalize: Promise<{ readonly inputTokens: number; readonly outputTokens: number }>;
+    },
+  ): AsyncIterable<string> {
+    let ctx: HookContext = { ...initialCtx, attempt: 1 };
+    await this.fire("onCallStart", ctx);
+    let attempt = 0;
+    let firstChunkSeen = false;
+    let aggregated = "";
+    try {
+      while (true) {
+        attempt += 1;
+        const { error: _droppedError, response: _droppedResponse, ...prior } = ctx;
+        ctx = { ...prior, attempt };
+        if (attempt > 1) {
+          await this.fire("onRetry", ctx);
+        }
+        const { stream, finalize } = exec(attempt);
+        // Attach a no-op catch handler to `finalize` immediately so a
+        // rejection (mid-stream error path; we never `await finalize` in
+        // that case) does not surface as an unhandled promise rejection.
+        // The user-facing error still propagates through the iterator.
+        finalize.catch(() => {
+          // intentional swallow; the iterator carries the user-facing error
+        });
+        try {
+          for await (const chunk of stream) {
+            firstChunkSeen = true;
+            aggregated += chunk;
+            yield chunk;
+          }
+          // Stream drained cleanly. Await usage; on success fire success
+          // and return.
+          const usage = await finalize;
+          ctx = {
+            ...ctx,
+            response: {
+              content: aggregated,
+              inputTokens: usage.inputTokens,
+              outputTokens: usage.outputTokens,
+            },
+          };
+          await this.fire("onCallSuccess", ctx);
+          return;
+        } catch (err) {
+          const wrapped = this.toLimnError(err);
+          // Mid-stream failures (any chunk already yielded) never retry:
+          // re-issuing the same request would duplicate output for the
+          // consumer. Surface and fire onCallError.
+          if (firstChunkSeen) {
+            ctx = { ...ctx, error: wrapped };
+            await this.fire("onCallError", ctx);
+            throw err;
+          }
+          // First-chunk failure path: consult the retry strategy.
+          const delayMs = this.retry.decide(attempt, wrapped);
+          if (delayMs === null) {
+            ctx = { ...ctx, error: wrapped };
+            await this.fire("onCallError", ctx);
+            throw err;
+          }
+          ctx = { ...ctx, error: wrapped };
+          await this.sleepFn(delayMs);
+        }
+      }
+    } finally {
+      await this.fire("onCallEnd", ctx);
+    }
+  }
+
   public async run<T extends DispatcherResult>(
     initialCtx: Omit<HookContext, "attempt" | "response" | "error">,
     exec: (attempt: number) => Promise<T>,

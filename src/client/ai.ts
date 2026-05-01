@@ -1,14 +1,14 @@
 /**
- * The `ai` namespace - Layer 1 entry point. `ai.ask` is wired in batch 1.1
- * against the `HookDispatcher` + provider registry. The remaining members
- * (`chat`, `extract`, `stream`) stay as Phase 1 placeholders until their
- * batches land (batch 1.5 chat, batch 1.6 extract, batch 1.7 stream).
+ * The `ai` namespace - Layer 1 entry point. All four members (`ask`, `chat`,
+ * `extract`, `stream`) are wired against the `HookDispatcher` + provider
+ * registry as of batch 1.7; `agent` (Layer 2) lands in Phase 3.
  */
 
 import type { z } from "zod";
 import { agent } from "../agent/agent.js";
 import type { ChatMessage as ProviderChatMessage } from "../client/options.js";
 import { DEFAULT_CONFIG, type LimnConfig } from "../config/limn_config.js";
+import { runExtract } from "../extract/extract.js";
 import { type Hook, HookDispatcher, newTraceId } from "../hooks/dispatcher.js";
 import { RedactionHook } from "../hooks/redaction_hook.js";
 import { ExponentialBackoffStrategy } from "../hooks/retry_strategy.js";
@@ -39,10 +39,6 @@ export interface Ai {
 
   readonly agent: typeof agent;
 }
-
-const notImplemented = (fn: string): never => {
-  throw new Error(`ai.${fn} is not implemented yet (Phase 1).`);
-};
 
 /**
  * Per-call context handed to the dispatcher factory. The trace + redaction
@@ -176,6 +172,40 @@ function buildAskMessages(prompt: string, context?: string): readonly ProviderCh
   ];
 }
 
+/**
+ * Split a user-supplied chat message array into a top-level `system` string
+ * and the remaining (system-free) message array. Provider adapters route the
+ * `system` slot through their vendor's dedicated channel (Anthropic's
+ * top-level `system` field; OpenAI's leading `role: "system"` message); the
+ * `ChatMessage` array passed to the dispatcher therefore must not contain
+ * `role: "system"` entries.
+ *
+ * Resolution rule (matches `ChatOptions.system`'s JSDoc): when an in-array
+ * system message is present it wins over `optionsSystem`. The first
+ * in-array system message's content is taken; subsequent system messages
+ * are filtered out (their content is dropped, not concatenated). This keeps
+ * the contract simple: "system message" is single-valued at the provider
+ * level, regardless of how many appear in the input array.
+ */
+function splitChatMessages(
+  messages: readonly ChatMessage[],
+  optionsSystem: string | undefined,
+): { system: string | undefined; userMessages: readonly ProviderChatMessage[] } {
+  let inArraySystem: string | undefined;
+  const userMessages: ProviderChatMessage[] = [];
+  for (const m of messages) {
+    if (m.role === "system") {
+      if (inArraySystem === undefined) inArraySystem = m.content;
+      continue;
+    }
+    userMessages.push({ role: m.role, content: m.content });
+  }
+  return {
+    system: inArraySystem ?? optionsSystem,
+    userMessages,
+  };
+}
+
 export const ai: Ai = {
   async ask(
     prompt: string,
@@ -226,19 +256,139 @@ export const ai: Ai = {
     return result.content;
   },
 
-  // TODO(batch-1.7): plumb options.attachments through to the request, mirroring ai.ask.
-  async chat(_messages, _options) {
-    return notImplemented("chat");
+  async chat(messages, options) {
+    const model = options?.model ?? DEFAULT_CONFIG.defaultModel;
+    const providerName = providerFor(model);
+    const provider = getProvider(providerName);
+
+    const { system, userMessages } = splitChatMessages(messages, options?.system);
+    const baseRequest: ProviderRequest = {
+      model,
+      messages: userMessages,
+      ...(system === undefined ? {} : { system }),
+      ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+      ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
+      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
+    };
+
+    const traceId = newTraceId();
+    const state: TraceState = { id: traceId, redactedFields: [] };
+    const dispatcher = currentDispatcherFactory({
+      state,
+      kind: "chat",
+      model,
+      provider: providerName,
+      request: baseRequest,
+    });
+    const result = await dispatcher.run(
+      {
+        traceId,
+        model,
+        messages: userMessages,
+      },
+      async () => {
+        const response = await provider.request(baseRequest);
+        return {
+          content: response.content,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+        };
+      },
+    );
+
+    return result.content;
   },
 
-  // TODO(batch-1.7): plumb options.attachments through to the request, mirroring ai.ask.
-  async extract(_schema, _input, _options) {
-    return notImplemented("extract");
+  async extract(schema, input, options) {
+    const model = options?.model ?? DEFAULT_CONFIG.defaultModel;
+    const providerName = providerFor(model);
+    const provider = getProvider(providerName);
+
+    // Each chat call inside the extract flow shares the same per-call
+    // dispatcher kind ("extract") so the trace records the orchestration's
+    // intent, not the underlying chat plumbing. The callback rebuilds the
+    // request per attempt because the message list grows on retry; the
+    // dispatcher therefore runs once per chat attempt, not once per retry
+    // attempt of the extract loop.
+    const callChat = async (messages: readonly ProviderChatMessage[]): Promise<string> => {
+      const { system, userMessages } = splitChatMessages(messages, undefined);
+      const baseRequest: ProviderRequest = {
+        model,
+        messages: userMessages,
+        ...(system === undefined ? {} : { system }),
+        ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+        ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
+        ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+        ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
+      };
+      const traceId = newTraceId();
+      const state: TraceState = { id: traceId, redactedFields: [] };
+      const dispatcher = currentDispatcherFactory({
+        state,
+        kind: "extract",
+        model,
+        provider: providerName,
+        request: baseRequest,
+      });
+      const result = await dispatcher.run({ traceId, model, messages: userMessages }, async () => {
+        const response = await provider.request(baseRequest);
+        return {
+          content: response.content,
+          inputTokens: response.usage.inputTokens,
+          outputTokens: response.usage.outputTokens,
+        };
+      });
+      return result.content;
+    };
+
+    return runExtract(schema, input, callChat, {
+      ...(options?.retryOnSchemaFailure === undefined
+        ? {}
+        : { retryOnSchemaFailure: options.retryOnSchemaFailure }),
+    });
   },
 
-  // TODO(batch-1.7): plumb options.attachments through to the request, mirroring ai.ask.
-  stream(_prompt, _options) {
-    throw new Error("ai.stream is not implemented yet (Phase 1).");
+  stream(prompt, options) {
+    const model = options?.model ?? DEFAULT_CONFIG.defaultModel;
+    const providerName = providerFor(model);
+    const provider = getProvider(providerName);
+
+    const messages = buildAskMessages(prompt);
+    const baseRequest: ProviderRequest = {
+      model,
+      messages,
+      ...(options?.maxTokens === undefined ? {} : { maxTokens: options.maxTokens }),
+      ...(options?.temperature === undefined ? {} : { temperature: options.temperature }),
+      ...(options?.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+      ...(options?.attachments === undefined ? {} : { attachments: options.attachments }),
+    };
+
+    const traceId = newTraceId();
+    const state: TraceState = { id: traceId, redactedFields: [] };
+    const dispatcher = currentDispatcherFactory({
+      state,
+      kind: "stream",
+      model,
+      provider: providerName,
+      request: baseRequest,
+    });
+    const onChunk = options?.onChunk;
+
+    // Wrap the dispatcher's runStream so we can fire `onChunk` per chunk
+    // before yielding to the consumer. The dispatcher handles retry,
+    // tracing, and lifecycle phases; we just decorate.
+    async function* streamWithCallback(): AsyncIterable<string> {
+      const inner = dispatcher.runStream({ traceId, model, messages }, (_attempt) => {
+        const { stream: providerStream, usage } = provider.requestStream(baseRequest);
+        return { stream: providerStream, finalize: usage };
+      });
+      for await (const chunk of inner) {
+        if (onChunk !== undefined) onChunk(chunk);
+        yield chunk;
+      }
+    }
+    return streamWithCallback();
   },
 
   agent,

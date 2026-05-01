@@ -25,7 +25,7 @@ class FakeProvider implements Provider {
   public async request(): Promise<never> {
     throw new Error("not used in registry tests");
   }
-  public stream(): AsyncIterable<string> {
+  public requestStream(): never {
     throw new Error("not used in registry tests");
   }
 }

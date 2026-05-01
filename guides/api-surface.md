@@ -2,7 +2,7 @@
 
 Every public function and type that ships from `limn`. The README has the 5-minute tour; this is the long form.
 
-> Phase 1 is in flight. `ai.ask` is live against Anthropic as of batch 1.2; `ai.chat`, `ai.extract`, and `ai.stream` remain placeholders until their batches land.
+> Phase 1 is in flight. As of batch 1.7 all four Layer 1 entry points (`ai.ask`, `ai.chat`, `ai.extract`, `ai.stream`) are wired end-to-end against Anthropic and OpenAI; agent and tool dispatch land in Phase 3.
 
 ## `ai` namespace
 
@@ -51,7 +51,9 @@ const reply = await ai.chat([
 ]);
 ```
 
-If a `role: "system"` message is present in the array, it wins over `options.system`.
+System routing rule: if a `role: "system"` message is present in the array, its content wins and is routed to the provider's dedicated system channel (Anthropic's top-level `system` field, OpenAI's leading system message). When no in-array system message is present, `options.system` takes effect. The remaining `user` and `assistant` messages forward verbatim. Multiple in-array system messages: the first wins, the rest are dropped.
+
+The same retry, trace, redaction, and timeout pipeline as `ai.ask` applies; `ChatOptions` accepts `model`, `system`, `maxTokens`, `temperature`, `timeoutMs`, `attachments`, and `maxRetries`.
 
 ### `ai.extract(schema, input, options?) -> Promise<T>`
 
@@ -64,14 +66,30 @@ const Person = z.object({ name: z.string(), email: z.string().email() });
 const person = await ai.extract(Person, resumeText);
 ```
 
+Internally, `ai.extract` builds a system prompt that includes a JSON Schema description of your Zod schema, sends it to the model, parses the response, and validates with `schema.safeParse`. Use `schema.describe("Person")` to give the schema a stable name surfaced in `SchemaValidationError.expectedSchemaName` and the trace.
+
 When the model's response fails validation:
 
 - With `retryOnSchemaFailure: false` (default): throw `SchemaValidationError` with the expected schema name and the actual payload.
-- With `retryOnSchemaFailure: true`: retry once, feeding the validation error back to the model as corrective feedback.
+- With `retryOnSchemaFailure: true`: retry once, feeding the validation error back to the model as corrective feedback. If the second attempt also fails, throw `SchemaValidationError` carrying the second payload.
+
+#### Supported Zod shapes
+
+The hand-rolled Zod-to-JSON-Schema converter (no extra runtime dependency per the project's dep policy) covers the common shapes:
+
+- `z.string()`, `z.string().email()`, `z.string().url()`, `z.string().uuid()`
+- `z.number()`, `z.boolean()`
+- `z.literal(v)`, `z.enum([...])`
+- `z.array(inner)`
+- `z.union([a, b, ...])`
+- `z.optional(inner)` (only meaningful inside an object)
+- `z.object({ ... })` with nested recursion
+
+Anything outside this subset (records, intersections, transforms, lazy, recursive types) falls back to `{ type: "object" }` so the model still receives a hint. Validation always runs through your real Zod schema, so the runtime contract is whatever Zod accepts; the converter only shapes the system-prompt hint the model sees.
 
 ### `ai.stream(prompt, options?) -> AsyncIterable<string>`
 
-Token-by-token streaming. Two consumption modes simultaneously:
+Token-by-token streaming. Two consumption modes are supported simultaneously: iterate the returned `AsyncIterable<string>` and/or supply an `onChunk` callback. The callback fires before each chunk yields to the iterator.
 
 ```ts
 // for-await
@@ -79,9 +97,15 @@ for await (const chunk of ai.stream("Write a haiku")) {
   process.stdout.write(chunk);
 }
 
-// callback (still iterable)
-ai.stream("Write a haiku", { onChunk: (c) => process.stdout.write(c) });
+// callback (still iterable; the loop body can be empty)
+for await (const _ of ai.stream("Write a haiku", { onChunk: (c) => process.stdout.write(c) })) {
+  // no-op; onChunk drives the side effect
+}
 ```
+
+Retry semantics: a failure BEFORE any chunk emits is safe to retry (the consumer has seen nothing) and consults the configured retry strategy exactly like `ai.ask`. A failure AFTER any chunk has already yielded surfaces immediately to the consumer; re-issuing would duplicate output, so mid-stream errors never retry.
+
+The trace record's `usage` is captured at end-of-stream from the provider's final usage event (Anthropic's `message_delta`, OpenAI's terminal usage chunk).
 
 ### `ai.agent({ ... }) -> Agent`
 

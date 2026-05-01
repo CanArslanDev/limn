@@ -35,7 +35,12 @@
 
 import type { Attachment, ChatMessage } from "../../client/options.js";
 import { AuthError, ModelTimeoutError, ProviderError, RateLimitError } from "../../errors/index.js";
-import type { Provider, ProviderRequest, ProviderResponse } from "../provider.js";
+import type {
+  Provider,
+  ProviderRequest,
+  ProviderResponse,
+  ProviderStreamResult,
+} from "../provider.js";
 
 /**
  * Constructor options for {@link AnthropicProvider}. Options-object shape
@@ -77,6 +82,24 @@ interface SdkMessageResponse {
 type SdkContentBlock =
   | { readonly type: "text"; readonly text: string }
   | { readonly type: string; readonly [key: string]: unknown };
+
+/**
+ * Structural narrowing of the Anthropic SDK's `RawMessageStreamEvent` union
+ * that the streaming adapter consumes. The full SDK union covers six event
+ * kinds; we only act on three (`message_start` for input tokens,
+ * `content_block_delta` for text deltas, `message_delta` for output-token
+ * progress) and ignore the rest. Each branch reads through optional fields
+ * so a future SDK reorganization (e.g. moving `usage` into a sibling event)
+ * surfaces as a runtime no-op rather than a crash.
+ */
+interface SdkStreamEvent {
+  readonly type: string;
+  readonly message?: {
+    readonly usage?: { readonly input_tokens?: number; readonly output_tokens?: number };
+  };
+  readonly delta?: { readonly type?: string; readonly text?: string };
+  readonly usage?: { readonly output_tokens?: number };
+}
 
 /**
  * Subset of the SDK error-class surface the adapter touches. The SDK exposes
@@ -233,14 +256,128 @@ export class AnthropicProvider implements Provider {
   }
 
   /**
-   * Streaming is wired in batch 1.7. Today this throws so callers get a
-   * deterministic error instead of an SDK call mid-flight.
+   * Begin a streaming request against Anthropic's `messages.create({ stream:
+   * true })` endpoint. Returns the two-channel result from the Provider
+   * contract: `stream` is the iterator of textual deltas, `usage` is the
+   * promise that resolves once the stream drains with cumulative tokens.
+   *
+   * Anthropic's stream emits a typed event union; we filter to
+   * `content_block_delta` events whose delta is a `text_delta` and yield
+   * the text. `message_start` carries the input-token count; `message_delta`
+   * carries the cumulative output-token count. We stash both as we see them
+   * and resolve the usage promise at end-of-stream.
+   *
+   * Error mapping mirrors `request()`: SDK-level errors translate through
+   * `mapSdkError`. A pre-stream failure (auth, missing peer dep) surfaces
+   * by making the iterator's first `next()` throw; the dispatcher's stream
+   * loop treats that as a first-chunk failure and consults the retry
+   * strategy. Mid-stream errors propagate from the iterator and never
+   * retry (chunks have already reached the consumer).
    */
-  public stream(_req: ProviderRequest): AsyncIterable<string> {
-    throw new ProviderError(
-      "AnthropicProvider.stream is not implemented yet (batch 1.7).",
-      "anthropic",
-    );
+  public requestStream(req: ProviderRequest): ProviderStreamResult {
+    // Promise.withResolvers-style hand-roll: the executor runs synchronously
+    // so the assignments below complete before the generator body runs.
+    // Definite-assignment assertions document this for TS.
+    let usageResolve!: (value: {
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    }) => void;
+    let usageReject!: (reason: unknown) => void;
+    const usage = new Promise<{
+      readonly inputTokens: number;
+      readonly outputTokens: number;
+    }>((resolve, reject) => {
+      usageResolve = resolve;
+      usageReject = reject;
+    });
+    const self = this;
+    const stream = (async function* anthropicStream(): AsyncIterable<string> {
+      // Auth check before any SDK touch (mirrors request()'s ordering).
+      if (self.apiKey === undefined || self.apiKey === "") {
+        const err = new AuthError("ANTHROPIC_API_KEY env var not set; cannot reach Anthropic.");
+        usageReject(err);
+        throw err;
+      }
+      for (const m of req.messages) {
+        if (m.role === "system") {
+          const err = new ProviderError(
+            "Anthropic does not accept role 'system' in the messages array; pass it via ProviderRequest.system instead.",
+            "anthropic",
+            undefined,
+            false,
+          );
+          usageReject(err);
+          throw err;
+        }
+      }
+      let state: CachedSdkState;
+      try {
+        state = await self.ensureState();
+      } catch (err) {
+        usageReject(err);
+        throw err;
+      }
+      const { errors: errs } = state;
+      const timeoutMs = req.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), timeoutMs);
+
+      const sdkRequest = {
+        model: req.model,
+        max_tokens: req.maxTokens ?? DEFAULT_MAX_TOKENS,
+        messages: buildSdkMessages(req.messages, req.attachments),
+        stream: true as const,
+        ...(req.system === undefined ? {} : { system: req.system }),
+        ...(req.temperature === undefined ? {} : { temperature: req.temperature }),
+      };
+
+      let inputTokens = 0;
+      let outputTokens = 0;
+      try {
+        // SDK-boundary cast: `messages.create({ stream: true })` returns an
+        // async iterable of typed events. We narrow to the structural shape
+        // we consume; the per-event union is read defensively below.
+        const sdkClient = state.client as {
+          readonly messages: {
+            create(
+              req: unknown,
+              opts: { signal: AbortSignal },
+            ): Promise<AsyncIterable<SdkStreamEvent>>;
+          };
+        };
+        const sdkStream = await sdkClient.messages.create(sdkRequest, { signal: ac.signal });
+        for await (const event of sdkStream) {
+          if (event.type === "message_start") {
+            const startUsage = event.message?.usage;
+            if (startUsage !== undefined) {
+              inputTokens = startUsage.input_tokens ?? inputTokens;
+              outputTokens = startUsage.output_tokens ?? outputTokens;
+            }
+          } else if (event.type === "content_block_delta") {
+            const delta = event.delta;
+            if (delta?.type === "text_delta" && typeof delta.text === "string") {
+              yield delta.text;
+            }
+          } else if (event.type === "message_delta") {
+            const deltaUsage = event.usage;
+            if (deltaUsage !== undefined) {
+              outputTokens = deltaUsage.output_tokens ?? outputTokens;
+            }
+          }
+          // Other event types (content_block_start, content_block_stop,
+          // message_stop) are intentionally ignored; they carry no data we
+          // surface today.
+        }
+        usageResolve({ inputTokens, outputTokens });
+      } catch (err) {
+        const mapped = mapSdkError(err, errs, timeoutMs);
+        usageReject(mapped);
+        throw mapped;
+      } finally {
+        clearTimeout(timer);
+      }
+    })();
+    return { stream, usage };
   }
 
   /**
